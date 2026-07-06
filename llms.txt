@@ -1,0 +1,33 @@
+# oraclebook
+
+> oraclebook is an open-source Python framework for building, backtesting, and running event-driven trading strategies on prediction markets like Polymarket and Kalshi. It provides composable Feeds, Strategies, risk Gates, an order Executor (paper or live), and Replay backtesting on recorded order flow (reproducible for a single feed; fills simulated by the paper executor; cross-topic interleaving best-effort).
+
+oraclebook extracts a production-grade, event-driven trading architecture into a reusable
+Python framework. It is built on domain-driven design with protocol-based dependency injection:
+a pub/sub message bus connects market-data feeds, strategies, pre-trade risk gates, and an
+order executor, with an append-only event log as the source of truth. Polymarket is the
+reference venue adapter; additional venues (Kalshi, Limitless, Azuro, and others) are added by
+implementing a small `Venue` interface. oraclebook emphasises honest validation: it backtests
+strategies by replaying real recorded order-book flow on a virtual clock (reproducible for a
+single feed; fills are simulated by the paper executor), supports paper trading, and ships with
+a candid, data-driven analysis of why naive prediction-market market-making tends to lose money.
+
+Key facts:
+- Language: Python 3.11+ (asyncio). License: MIT (free, open source).
+- Use cases: prediction-market trading bots, market making, automated/algorithmic trading,
+  strategy backtesting, and trading research on Polymarket and other prediction markets.
+- The framework is five concepts: Feed, Strategy, Gate, Executor, Venue — plus Replay (backtesting).
+
+## Documentation
+- [Getting Started](https://github.com/jabrahamtech/oraclebook/blob/main/GETTING_STARTED.md): install oraclebook and write, paper-run, and backtest a Polymarket trading strategy in Python using the five core concepts.
+- [Naming and Architecture](https://github.com/jabrahamtech/oraclebook/blob/main/NAMING.md): the vocabulary (Feed, Market, Strategy, Executor, Gate, Venue, Replay) and an event-flow architecture diagram.
+- [README](https://github.com/jabrahamtech/oraclebook/blob/main/README.md): overview, quickstart, supported venues, and FAQ.
+- [AGENTS.md](https://github.com/jabrahamtech/oraclebook/blob/main/AGENTS.md): how to extend oraclebook with AI coding agents (Claude Code, Cursor) — conventions and example prompts for adding strategies, gates, and venues.
+
+## Concepts
+- Feed: a market-data source that streams live order books and prices from a venue onto the event bus (e.g. PolymarketFeed, BinanceFeed).
+- Strategy: your trading logic in a single class; it consumes events and emits orders, and never touches the executor or positions directly.
+- Gate: a composable pre-trade risk check, evaluated cheapest-first (e.g. notional caps, feed staleness, inventory limits).
+- Executor: places and cancels orders and reports fills, in paper (simulated) or live mode.
+- Venue: a prediction-market adapter bundling a Feed, Executor, settlement/resolution, and fee model (Polymarket is the reference; Kalshi and others are added by implementing four methods).
+- Replay: backtesting that re-runs a strategy over recorded order-book flow on a virtual clock (reproducible for a single feed; fills simulated by the paper executor), producing a report of fills and ending balance.

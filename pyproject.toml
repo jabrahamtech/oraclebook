@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oraclebook"
+version = "0.0.1"
+description = "Open-source Python framework for prediction-market trading bots: a Polymarket adapter, event-driven strategies, risk gates, and replay backtesting on recorded order flow (Kalshi and others via the Venue interface)."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Jonathan Abraham" }]
+# PyPI is its own search surface — keywords mirror the README + GitHub topics.
+keywords = [
+  "prediction-markets", "polymarket", "kalshi", "trading-bot", "algorithmic-trading",
+  "backtesting", "paper-trading", "market-making", "event-driven", "order-book",
+  "quantitative-finance", "trading-framework",
+]
+# Note: no "License :: OSI Approved" classifier — redundant under PEP 639's `license` SPDX field.
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "structlog>=24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+polymarket = ["aiohttp>=3.9"]                       # adapter feed (read-only)
+# CLOB V2 client — the original py-clob-client is archived and V1-signed orders are
+# rejected by the exchange since the April 2026 cutover.
+polymarket-live = ["aiohttp>=3.9", "py-clob-client-v2>=1.0.2"]  # + live execution (signing)
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[project.scripts]
+oraclebook = "oraclebook.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jabrahamtech/oraclebook"
+Documentation = "https://github.com/jabrahamtech/oraclebook/blob/main/README.md"
+Issues = "https://github.com/jabrahamtech/oraclebook/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oraclebook"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
