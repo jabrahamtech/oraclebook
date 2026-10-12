@@ -86,7 +86,7 @@ class PolymarketFeed:
                         break
             except asyncio.CancelledError:
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — any socket error triggers a logged reconnect
                 logger.warning("polymarket_feed.error", error=str(exc))
                 await asyncio.sleep(2.0)
 
@@ -95,7 +95,7 @@ class PolymarketFeed:
             try:
                 await self._ws.send_str("PING")
                 await asyncio.sleep(self._ping_interval)
-            except Exception:
+            except Exception:  # noqa: BLE001 — ping loop ends with its socket
                 break
 
     async def _on_message(self, raw: str) -> None:

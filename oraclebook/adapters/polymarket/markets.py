@@ -46,7 +46,7 @@ def _to_market(m: dict) -> Market | None:
     end_ts: float | None = None
     if m.get("endDate"):
         try:
-            end_ts = datetime.fromisoformat(m["endDate"].replace("Z", "+00:00")).timestamp()
+            end_ts = datetime.fromisoformat(m["endDate"]).timestamp()
         except ValueError:
             pass
     return Market(

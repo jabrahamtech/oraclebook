@@ -117,7 +117,7 @@ class PolymarketExecutor:
         for o in orders:
             try:
                 resp = await asyncio.to_thread(self._post, o)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — venue errors are logged per order
                 logger.warning("polymarket_exec.submit_failed", order=o.id, error=str(exc))
                 continue
             fill = self._fill_from_response(o, resp)
@@ -176,7 +176,7 @@ class PolymarketExecutor:
         try:
             await asyncio.to_thread(self._client.cancel_order, OrderPayload(orderID=venue_order_id))
             return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — cancel is best-effort; logged
             logger.warning("polymarket_exec.cancel_failed", id=venue_order_id, error=str(exc))
             return False
 
@@ -184,7 +184,7 @@ class PolymarketExecutor:
         try:
             await asyncio.to_thread(self._client.cancel_all)
             return 1
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — cancel_all is best-effort; logged
             logger.warning("polymarket_exec.cancel_all_failed", error=str(exc))
             return 0
 
@@ -197,7 +197,7 @@ class PolymarketExecutor:
                 BalanceAllowanceParams(asset_type=AssetType.COLLATERAL),
             )
             return float(resp.get("balance", 0)) / 1_000_000  # pUSD collateral has 6 decimals
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — balance falls back to 0, blocking orders
             logger.warning("polymarket_exec.balance_failed", error=str(exc))
             return 0.0
 
