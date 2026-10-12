@@ -32,6 +32,8 @@ Kalshi's round-up to the cent erases a 1pp favourite edge on single-contract ord
 ## Ideas that survived validation (ranked)
 
 ### 1. Maker-side favourite carry (buy 90–97¢ outcomes passively, hold to resolution)
+- **Status.** The taker version shows no edge on real data (see *Empirical check*); the maker
+  version is untested.
 - **Evidence.** The favourite–longshot bias is well documented: cheap contracts lose heavily and
   expensive ones earn a small positive return. Kalshi: Bürgi, Deng & Whelan (CEPR DP20631), 300k+
   contracts, <10¢ contracts lose >60%, >50¢ earn a small positive return; makers lose ≈9.6% on
@@ -109,4 +111,67 @@ Public sources to run the tests on:
 - Polymarket-v1 Database: arXiv 2606.04217.
 - Kaggle Polymarket and Kalshi snapshots: their schemas are unverified.
 
-The empirical check run for this document is in the section below.
+
+## Empirical check on real resolved markets
+
+The favourite–longshot bias was tested directly on three public datasets of real resolved
+markets, all hosted on GitHub. Kaggle and HuggingFace were not reachable from the research
+environment.
+
+| | Source | Coverage | Price used |
+|---|---|---|---|
+| A | `usepancake/polymarket-history` (CC BY 4.0, non-commercial) | 7,331 resolved Polymarket binaries, 2023-03 → 2026-05 | daily 00:00 UTC price (no bid/ask) |
+| B | `J0shusmc/Kalshi-BTC` (MIT) | 6,330 Kalshi `KXBTC15M` markets, 2026-06-15 → 08-20 | 1-minute YES bid/ask; buys at the ask |
+| C | `marketlenstrade/polymarket-historical-data` (CC BY 4.0) | 2,249 Polymarket markets on 7 days in 2026 | best bid/ask |
+
+Return per $1 from buying at price `p` (EW = equal weight per contract). The 95% CIs come from
+a bootstrap with 5,000 replications and a fixed seed, resampling markets for EW and events for
+the clustered column.
+
+| Data, horizon | Bin | n | Win rate vs price | Gross EW [CI] | Clustered [CI] | After fees |
+|---|---|---|---|---|---|---|
+| A, 1d to planned end | ≥0.90 | 172 | .965 vs .964 | +0.2% [−3.1, +2.9] | −0.7% [−4.9, +2.8] | −0.0% (r=0.07) |
+| A, 7d | ≥0.90 | 108 | .954 vs .958 | −0.7% [−5.4, +3.1] | −2.3% [−8.7, +2.8] | −0.9% |
+| A, 7d | ≤0.10 | 1,659 | .033 vs .019 | +26% [−22, +83] | +72% [+12, +148] | +18% |
+| B, 5m to close | ≥0.90 | 3,045 | .959 vs .956 | +0.4% [−0.4, +1.1] | +0.3% [−0.5, +1.1] | −0.7% [−1.4, +0.1] (Kalshi) |
+| B, 5m | ≤0.10 | 2,892 | .036 vs .043 | −12% [−32, +11] | −9% [−31, +15] | −34% [−47, −19] |
+| B, 1m | ≤0.10 | 5,555 | .008 vs .009 | −59% [−82, −28] | −58% [−82, −25] | −82% [−88, −74] |
+| C, open+5m | ≥0.90 | 178 | .949 vs .962 | −1.3% [−5.0, +1.8] | −1.1% [−5.4, +2.2] | −1.6% (r=0.07) |
+
+Calibration slope, from a logistic regression of the outcome on logit(price); a slope above 1
+is the classic bias. CIs come from resampling events.
+
+| Data, horizon | Slope [CI] |
+|---|---|
+| A, 1d | 0.82 [0.76, 0.89] |
+| A, 7d | 0.84 [0.77, 0.92] |
+| A, 30d | 0.92 [0.82, 1.03] |
+| B, 10m | 1.12 [1.05, 1.19] |
+| B, 5m | 1.05 [1.00, 1.10] |
+| B, 1m | 1.08 [1.00, 1.19] |
+| C, open+5m | 0.98 [0.82, 1.21] |
+
+**What this says.**
+- **Favourites:** taking 90¢+ favourites at executable prices shows **no edge** in any dataset or
+  at any horizon. Gross returns are within ±1–2% with CIs spanning zero, and slightly negative
+  after Kalshi fees.
+- **Longshots:** Kalshi's short-horizon longshots lose heavily at the ask, consistent with the
+  literature.
+- **Polymarket's daily prices lean the other way** (slope < 1). This may be an artefact of a
+  last-trade or mid price in thin books, so re-test it on bid/ask data before acting on it.
+- **Revision to idea #1:** the *taker* version of favourite carry is falsified on these
+  samples. Only the *maker* version remains untested, and it needs fill-conditional data —
+  recorded L2 replayed through the conservative paper executor.
+
+**Look-ahead trap found in the process.** Measuring "7 days before resolution" from the
+*actual* resolution time leaks the outcome. "Will X happen by D?" markets that resolve Yes early
+get sampled just before the event. In dataset A that moved the calibration intercept from about
++0.02 to about +0.24 and made longshots look underpriced. Anchor horizons on the **scheduled**
+end/close time.
+
+**Limitations.**
+- All three datasets are resolved-only.
+- A has no event ids (category + end date stands in for the event) and no executable prices.
+- B is a single crypto series with 67 day-clusters.
+- C is a 7-day vendor sample.
+- Many bins and horizons were tested, so expect some cells to look significant by chance.
