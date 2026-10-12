@@ -3,16 +3,25 @@
 ⚠️ EXPERIMENTAL — live trading risks real money. Credentials come ONLY from environment
 variables (never embedded); EIP-712 order signing is delegated to py-clob-client-v2.
 
-Caveat: resting **maker** orders fill asynchronously via the user WebSocket, which this
-reference does not yet wire. `submit()` posts orders and reports only the fills the CLOB
-confirms synchronously (status "matched" — crossing/marketable orders), using the
-exchange-reported size/price when present. A passive maker strategy must add a user-WS
-fill stream to capture resting fills. Validate in paper + Replay first; this is the live
-path, not a tested-profitable one.
+Order types map onto the SDK as follows:
+  LIMIT + GTC / GTD   -> `create_and_post_order(..., order_type=GTC|GTD)`. GTD sends the
+                         order's `expiration` plus the CLOB's 60s security threshold, so the
+                         order stops resting at `OrderRequest.expiration`.
+  FOK / FAK, MARKET   -> `create_and_post_market_order(..., order_type=FOK|FAK)`; the order's
+                         `price` is the worst-price limit. BUY amounts are USDC
+                         (`size * price`), SELL amounts are shares. MARKET defaults to FOK.
 
-Order types: LIMIT + GTC/GTD map to a standard order (GTD carries the order's
-`expiration`). MARKET orders are not yet wired through this reference client — only
-LIMIT orders are supported; `CompleteSetMaker` only emits LIMIT+GTC.
+Fills: only what the CLOB matches synchronously (status "matched") is reported, sized from
+the response's `makingAmount`/`takingAmount` (BUY: making = USDC, taking = shares; SELL the
+reverse). Resting orders ("live"/"delayed", or the unmatched remainder of a GTC/GTD order)
+are tracked in `open_orders()` and can be cancelled by venue order id. Resting fills arrive
+asynchronously via the user WebSocket, which this reference does not yet wire, so a passive
+maker strategy must add that stream. Validate in paper + Replay first; this is the live path,
+not a tested-profitable one.
+
+When market metadata is supplied (`markets=` or `update_markets`), prices are rounded to the
+market's tick (BUY down, SELL up — never worse than requested) and resting orders below the
+market's minimum size are rejected locally; otherwise the SDK validates.
 
 Environment:
   POLYMARKET_PRIVATE_KEY                  (required) signer private key
@@ -31,16 +40,38 @@ Requires: pip install oraclebook[polymarket-live]   (py-clob-client-v2)
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import os
+import time
+from collections.abc import Iterable
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 
 import structlog
 
-from oraclebook.core.models import Fill, OrderRequest, Position, Side, TimeInForce
+from oraclebook.adapters.polymarket.fees import fee_for_market
+from oraclebook.core.models import (
+    Fill,
+    Market,
+    OrderRequest,
+    OrderType,
+    Position,
+    Side,
+    TimeInForce,
+)
 
 logger = structlog.get_logger()
 DEFAULT_HOST = "https://clob.polymarket.com"
 
 _BYTES32_ZERO = "0x" + "0" * 64
+
+# The CLOB enforces a one-minute security threshold on GTD expirations: an order meant to
+# expire at T must be sent with expiration T + 60.
+GTD_SECURITY_BUFFER_S = 60
+
+_TICK_SIZES = frozenset({"0.1", "0.01", "0.005", "0.0025", "0.001", "0.0001"})
+_RESTING_STATUSES = frozenset({"live", "delayed"})
+_ACCEPTED_STATUSES = _RESTING_STATUSES | {"matched"}
+_SIZE_EPSILON = 1e-9
 
 # The maintainer's registered Polymarket Builder Code. Attached to orders by default so
 # framework-attributed volume earns a share of Polymarket's weekly builder-rewards pool.
@@ -57,6 +88,31 @@ def resolve_builder_code() -> str:
     return os.environ.get("POLYMARKET_BUILDER_CODE") or MAINTAINER_BUILDER_CODE
 
 
+def _amount(value) -> float | None:
+    """Parse a CLOB decimal-string amount; "" means zero, a missing key means unknown."""
+    if value is None:
+        return None
+    if value == "":
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sdk_order_type(o: OrderRequest) -> str:
+    if o.time_in_force in (TimeInForce.FOK, TimeInForce.FAK):
+        return o.time_in_force.value
+    if o.order_type == OrderType.MARKET:
+        return TimeInForce.FOK.value
+    return o.time_in_force.value
+
+
+def _rests(order_type: str) -> bool:
+    """GTC/GTD orders keep any unmatched remainder on the book; FOK/FAK never rest."""
+    return order_type in (TimeInForce.GTC.value, TimeInForce.GTD.value)
+
+
 class PolymarketExecutor:
     """Live CLOB V2 executor implementing the Executor protocol via py-clob-client-v2."""
 
@@ -68,8 +124,13 @@ class PolymarketExecutor:
         private_key: str | None = None,
         funder: str | None = None,
         client=None,  # inject a client (tests); otherwise built from env creds
+        markets: Iterable[Market] | None = None,
     ) -> None:
         self._builder_code = resolve_builder_code()
+        self._markets: dict[str, Market] = {}
+        self._open: dict[str, OrderRequest] = {}
+        if markets is not None:
+            self.update_markets(markets)
         # Operational transparency: the active attribution is always visible in logs,
         # never only in config (see README "Builder attribution").
         logger.info(
@@ -112,33 +173,110 @@ class PolymarketExecutor:
             client.set_api_creds(client.create_or_derive_api_key())
         return client
 
+    def update_markets(self, markets: Iterable[Market]) -> None:
+        """Register market metadata (tick, min size, neg-risk, fees) by outcome token."""
+        for m in markets:
+            for token in m.token_ids:
+                self._markets[token] = m
+
+    def open_orders(self) -> list[OrderRequest]:
+        """Orders resting on the book, sized to their unmatched remainder. Each carries its
+        venue order id in `meta["venue_order_id"]` for `cancel()`."""
+        return list(self._open.values())
+
     async def submit(self, orders: list[OrderRequest]) -> list[Fill]:
         fills: list[Fill] = []
         for o in orders:
-            try:
-                resp = await asyncio.to_thread(self._post, o)
-            except Exception as exc:
-                logger.warning("polymarket_exec.submit_failed", order=o.id, error=str(exc))
+            price = self._validated_price(o)
+            if price is None:
                 continue
-            fill = self._fill_from_response(o, resp)
+            try:
+                resp = await asyncio.to_thread(self._post, o, price)
+            except Exception as exc:  # noqa: BLE001
+                if getattr(exc, "status_code", None) is not None:
+                    logger.warning(
+                        "polymarket_exec.order_rejected", order=o.id, token=o.token_id,
+                        status_code=exc.status_code, error=str(exc),
+                    )
+                else:
+                    # A transport failure after signing leaves the order's fate unknown: it
+                    # may be resting on the book. Reconcile against the venue before retrying.
+                    logger.error(
+                        "polymarket_exec.submit_state_unknown", order=o.id, token=o.token_id,
+                        side=o.side.value, price=price, size=o.size, error=str(exc),
+                    )
+                continue
+            fill = self._handle_response(o, price, resp)
             if fill is not None:
                 fills.append(fill)
         return fills
 
-    def _post(self, o: OrderRequest):
-        from py_clob_client_v2 import OrderArgs
+    def _reject(self, o: OrderRequest, reason: str, **details) -> None:
+        logger.warning("polymarket_exec.order_rejected", order=o.id, token=o.token_id,
+                       reason=reason, **details)
 
-        # GTD (good-til-date) is the maker primitive for short-dated markets: pass the
-        # order's expiration through so it isn't left resting past the market's close.
-        expiration = int(o.expiration) if o.time_in_force == TimeInForce.GTD and o.expiration else 0
-        args = OrderArgs(
-            token_id=o.token_id, price=o.price, size=o.size,
-            side="BUY" if o.side == Side.BUY else "SELL",
-            expiration=expiration,
-            builder_code=self._builder_code,
-        )
+    def _validated_price(self, o: OrderRequest) -> float | None:
+        """The price to send (tick-rounded when the market is known), or None if rejected."""
+        if not 0.0 < o.price < 1.0:
+            self._reject(o, "price_out_of_range", price=o.price)
+            return None
+        order_type = _sdk_order_type(o)
+        if order_type == TimeInForce.GTD.value and o.expiration <= time.time():
+            self._reject(o, "gtd_expiration_not_in_future", expiration=o.expiration)
+            return None
+        market = self._markets.get(o.token_id)
+        if market is None:
+            return o.price
         try:
-            return self._client.create_and_post_order(args)
+            tick = Decimal(market.tick_size)
+            rounding = ROUND_FLOOR if o.side == Side.BUY else ROUND_CEILING
+            price = float((Decimal(str(o.price)) / tick).to_integral_value(rounding) * tick)
+        except (InvalidOperation, ZeroDivisionError):
+            return o.price
+        if not float(tick) <= price <= 1.0 - float(tick):
+            self._reject(o, "price_outside_tick_bounds", price=o.price, tick=market.tick_size)
+            return None
+        if _rests(order_type) and market.min_order_size and o.size < market.min_order_size:
+            self._reject(o, "below_min_order_size", size=o.size, min_size=market.min_order_size)
+            return None
+        return price
+
+    def _options(self, token_id: str):
+        market = self._markets.get(token_id)
+        if market is None:
+            return None
+        from py_clob_client_v2 import PartialCreateOrderOptions
+
+        neg_risk = market.meta.get("neg_risk")
+        return PartialCreateOrderOptions(
+            tick_size=market.tick_size if market.tick_size in _TICK_SIZES else None,
+            neg_risk=neg_risk if isinstance(neg_risk, bool) else None,
+        )
+
+    def _post(self, o: OrderRequest, price: float):
+        from py_clob_client_v2 import MarketOrderArgs, OrderArgs
+
+        order_type = _sdk_order_type(o)
+        options = self._options(o.token_id)
+        side = "BUY" if o.side == Side.BUY else "SELL"
+        if not _rests(order_type):
+            args = MarketOrderArgs(
+                token_id=o.token_id,
+                amount=o.size * price if o.side == Side.BUY else o.size,
+                side=side, price=price, order_type=order_type,
+                builder_code=self._builder_code,
+            )
+            post = self._client.create_and_post_market_order
+        else:
+            gtd = order_type == TimeInForce.GTD.value
+            expiration = o.expiration + GTD_SECURITY_BUFFER_S if gtd else 0
+            args = OrderArgs(
+                token_id=o.token_id, price=price, size=o.size, side=side,
+                expiration=expiration, builder_code=self._builder_code,
+            )
+            post = self._client.create_and_post_order
+        try:
+            return post(args, options=options, order_type=order_type)
         except Exception as exc:
             # A builder code Polymarket has disabled makes the CLOB reject orders. The
             # code must never break a user's order flow: fall back to zero attribution
@@ -146,47 +284,96 @@ class PolymarketExecutor:
             if "builder" in str(exc).lower() and self._builder_code != _BYTES32_ZERO:
                 logger.error(
                     "polymarket_exec.builder_code_rejected_falling_back",
-                    builder_code=self._builder_code, error=str(exc),
+                    order=o.id, builder_code=self._builder_code, error=str(exc),
                 )
                 self._builder_code = _BYTES32_ZERO
                 args.builder_code = _BYTES32_ZERO
-                return self._client.create_and_post_order(args)
+                return post(args, options=options, order_type=order_type)
             raise
 
-    @staticmethod
-    def _fill_from_response(o: OrderRequest, resp) -> Fill | None:
-        # Only "matched" is a synchronous fill; "live"/"delayed" rest and fill via the user WS.
-        if not isinstance(resp, dict) or resp.get("status") != "matched":
+    def _handle_response(self, o: OrderRequest, price: float, resp) -> Fill | None:
+        if not isinstance(resp, dict):
+            logger.error("polymarket_exec.unexpected_response", order=o.id, response=repr(resp))
             return None
-        oid = resp.get("orderID") or resp.get("orderId") or ""
-        # Prefer exchange-reported size/price over the requested values — the CLOB can
-        # partial-fill or price-improve a marketable order, and the Ledger should record
-        # what actually happened, not what was requested.
-        size = float(resp.get("size_matched") or resp.get("making_amount") or o.size)
-        price = float(resp.get("price") or o.price)
+        oid = str(resp.get("orderID") or "")
+        status = str(resp.get("status") or "").lower()
+        error = resp.get("errorMsg") or ""
+        if resp.get("success") is False or error or status not in _ACCEPTED_STATUSES:
+            self._reject(o, "venue_rejected", venue_order_id=oid, status=status, error=error)
+            return None
+        if status in _RESTING_STATUSES:
+            self._track_open(o, oid, price, o.size)
+            return None
+
+        shares, avg_price = self._matched(o, price, resp)
+        if _rests(_sdk_order_type(o)):
+            self._track_open(o, oid, price, o.size - shares)
+        if shares <= _SIZE_EPSILON:
+            logger.warning("polymarket_exec.matched_without_size", order=o.id, venue_order_id=oid)
+            return None
+        market = self._markets.get(o.token_id)
+        fee = fee_for_market(market, avg_price, shares, is_maker=False) if market else 0.0
         return Fill(
             order_id=o.id, token_id=o.token_id, market_id=o.market_id, side=o.side,
-            price=price, size=size, venue_order_id=str(oid),
+            price=avg_price, size=shares, fee=fee, venue_order_id=oid,
             strategy=o.strategy, asset=o.asset, direction=o.direction, fill_source="live",
+        )
+
+    @staticmethod
+    def _matched(o: OrderRequest, price: float, resp: dict) -> tuple[float, float]:
+        """(shares, average price) actually matched. BUY: making = USDC, taking = shares;
+        SELL: making = shares, taking = USDC. Fees settle separately and are excluded."""
+        making = _amount(resp.get("makingAmount"))
+        taking = _amount(resp.get("takingAmount"))
+        shares, usdc = (taking, making) if o.side == Side.BUY else (making, taking)
+        if shares is None and usdc is None:
+            logger.warning("polymarket_exec.matched_without_amounts", order=o.id)
+            return o.size, price
+        if shares is None:
+            shares = usdc / price
+        if usdc is None or shares <= 0 or usdc <= 0:
+            return shares, price
+        return shares, usdc / shares
+
+    def _track_open(self, o: OrderRequest, oid: str, price: float, remaining: float) -> None:
+        if remaining <= _SIZE_EPSILON:
+            return
+        if not oid:
+            logger.error("polymarket_exec.resting_without_order_id", order=o.id)
+            return
+        self._open[oid] = dataclasses.replace(
+            o, price=price, size=remaining, meta={**o.meta, "venue_order_id": oid}
         )
 
     async def cancel(self, venue_order_id: str) -> bool:
         from py_clob_client_v2 import OrderPayload
 
         try:
-            await asyncio.to_thread(self._client.cancel_order, OrderPayload(orderID=venue_order_id))
-            return True
-        except Exception as exc:
+            resp = await asyncio.to_thread(
+                self._client.cancel_order, OrderPayload(orderID=venue_order_id)
+            )
+        except Exception as exc:  # noqa: BLE001
             logger.warning("polymarket_exec.cancel_failed", id=venue_order_id, error=str(exc))
             return False
+        not_canceled = resp.get("not_canceled") if isinstance(resp, dict) else None
+        if not_canceled and venue_order_id in not_canceled:
+            logger.warning("polymarket_exec.cancel_refused", id=venue_order_id,
+                           reason=not_canceled[venue_order_id])
+            return False
+        self._open.pop(venue_order_id, None)
+        return True
 
     async def cancel_all(self) -> int:
         try:
-            await asyncio.to_thread(self._client.cancel_all)
-            return 1
-        except Exception as exc:
-            logger.warning("polymarket_exec.cancel_all_failed", error=str(exc))
+            resp = await asyncio.to_thread(self._client.cancel_all)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("polymarket_exec.cancel_all_failed", error=str(exc),
+                           open_orders=list(self._open))
             return 0
+        canceled = resp.get("canceled") if isinstance(resp, dict) else None
+        count = len(canceled) if isinstance(canceled, list) else len(self._open)
+        self._open.clear()
+        return count
 
     async def get_balance(self) -> float:
         from py_clob_client_v2 import AssetType, BalanceAllowanceParams
@@ -197,7 +384,7 @@ class PolymarketExecutor:
                 BalanceAllowanceParams(asset_type=AssetType.COLLATERAL),
             )
             return float(resp.get("balance", 0)) / 1_000_000  # pUSD collateral has 6 decimals
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("polymarket_exec.balance_failed", error=str(exc))
             return 0.0
 
