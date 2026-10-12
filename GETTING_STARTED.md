@@ -2,7 +2,7 @@
 
 **oraclebook** is an event-driven framework for **prediction-market** trading: write a
 strategy once, run it in paper or live, and backtest it on *real recorded order flow*
-(reproducible for a single feed; paper fills; cross-topic interleaving best-effort). Polymarket is the reference [Venue](NAMING.md); the seams are open so
+(deterministic; conservative trade-through paper fills). Polymarket is the reference [Venue](NAMING.md); the seams are open so
 you can add others.
 
 > **Status: pre-alpha.** The API below is the design target as the framework is
@@ -77,10 +77,13 @@ Going live is a one-word change (`executor="polymarket"`) plus credentials in `.
 ## 3. Backtest with `Replay` — the headline feature
 
 Record the real order-book flow once, then replay it through *any* strategy. Because the `Clock`
-advances off the recorded events (not the wall), a single-feed replay is reproducible — your
-strategy sees the exact book updates that happened. Fills are simulated by the paper executor
-(replaying real maker fills via a venue's user-WS is a planned follow-on), and across multiple
-topics the interleaving is best-effort — so keep a backtest to one feed for strict reproducibility.
+advances off the recorded events (not the wall) and each event is fully handled before the next
+is published, a replay is deterministic — your strategy sees the exact book updates that happened,
+in recorded order, with no lookahead. Fills are simulated conservatively by the paper executor:
+orders that cross the book take the visible depth as a taker; resting orders fill as a maker only
+once the opposite side reaches their price (their whole queue traded through). That is pessimistic
+about queue position and makes adverse selection visible. Pass the venue's `fee` as `fee_model`,
+an activation `latency_s`, and `settlements` to measure PnL to resolution.
 
 ```bash
 # capture live order flow to JSONL recordings

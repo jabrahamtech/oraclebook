@@ -9,7 +9,7 @@
 > **Status: pre-alpha.** oraclebook is being assembled from a production Polymarket trading bot. The API shown here is the design target and is **not yet published to PyPI**. Star/watch the repo to follow progress.
 
 Write a trading strategy once, validate it on **real recorded order flow** with replay that is
-reproducible for a single feed (paper fills; cross-topic interleaving best-effort), then run it
+deterministic (conservative trade-through paper fills; exact cross-topic ordering), then run it
 in **paper** or **live**. oraclebook is extracted from a production
 Polymarket trading bot and built on a clean, event-driven architecture (domain-driven design
 with protocol-based dependency injection).

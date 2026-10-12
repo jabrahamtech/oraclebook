@@ -1,6 +1,6 @@
 # oraclebook
 
-> oraclebook is an open-source Python framework for building, backtesting, and running event-driven trading strategies on prediction markets like Polymarket and Kalshi. It provides composable Feeds, Strategies, risk Gates, an order Executor (paper or live), and Replay backtesting on recorded order flow (reproducible for a single feed; fills simulated by the paper executor; cross-topic interleaving best-effort).
+> oraclebook is an open-source Python framework for building, backtesting, and running event-driven trading strategies on prediction markets like Polymarket and Kalshi. It provides composable Feeds, Strategies, risk Gates, an order Executor (paper or live), and Replay backtesting on recorded order flow (deterministic; conservative trade-through paper fills with venue fees; markouts and PSR/DSR evaluation in oraclebook.analysis).
 
 oraclebook extracts a production-grade, event-driven trading architecture into a reusable
 Python framework. It is built on domain-driven design with protocol-based dependency injection:
