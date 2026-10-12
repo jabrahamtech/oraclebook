@@ -14,7 +14,7 @@ class Buyer(ob.BaseStrategy):
 
     async def on_book(self, book):
         return [ob.OrderRequest(token_id=book.token_id, market_id=book.market_id, side=ob.Side.BUY,
-                                price=book.best_bid, size=10, order_type=ob.OrderType.LIMIT,
+                                price=book.best_ask, size=10, order_type=ob.OrderType.LIMIT,
                                 strategy=self.name)]
 
     async def on_fill(self, event):
@@ -25,7 +25,7 @@ async def test_end_to_end_fill_updates_book_balance_and_notifies():
     s = Buyer()
     app = ob.App(strategy=s, executor="paper", starting_balance=100.0, gates=[ob.OrderSizeGate(1.0)])
     await app.start()
-    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.55))
+    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.54, best_ask=0.55))
     await asyncio.sleep(0.1)
     await app.stop()
     p = app.book.get("UP")
@@ -37,7 +37,7 @@ async def test_end_to_end_fill_updates_book_balance_and_notifies():
 async def test_gate_rejection_blocks_the_fill():
     app = ob.App(strategy=Buyer(), executor="paper", starting_balance=3.0, gates=[ob.BalanceGate()])
     await app.start()
-    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.55))
+    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.54, best_ask=0.55))
     await asyncio.sleep(0.1)
     await app.stop()
     assert app.book.get("UP") is None  # $5.50 > $3.00 -> rejected

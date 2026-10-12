@@ -140,3 +140,4 @@ class RiskContext:
     book: Book
     paper_mode: bool = False
     cache_age_sec: float = 0.0
+    open_orders: tuple[OrderRequest, ...] = ()  # resting, unfilled (size = remaining)

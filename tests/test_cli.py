@@ -17,13 +17,13 @@ class CheapBuyer(ob.BaseStrategy):
     name = "cb"
 
     async def on_book(self, book):
-        if book.best_bid <= 0.40:
+        if 0 < book.best_ask <= 0.40:
             return [
                 ob.OrderRequest(
                     token_id=book.token_id,
                     market_id=book.market_id,
                     side=ob.Side.BUY,
-                    price=book.best_bid,
+                    price=book.best_ask,
                     size=10,
                     order_type=ob.OrderType.LIMIT,
                     strategy=self.name,
@@ -37,7 +37,7 @@ async def _record(path):
     rec = Recorder(bus, path)
     await rec.start()
     for bid in [0.50, 0.38, 0.42, 0.35, 0.60]:  # two are <= 0.40
-        await bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=bid))
+        await bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=bid - 0.01, best_ask=bid))
         await asyncio.sleep(0.001)
     await asyncio.sleep(0.03)
     await rec.stop()

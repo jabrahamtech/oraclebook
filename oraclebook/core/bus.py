@@ -36,10 +36,11 @@ class CoalescingBuffer:
         self._event.set()
 
     def get_nowait(self) -> Any:
+        """Deliver the key that has waited longest (FIFO by first pending update), so a
+        busy key can't starve a quiet one; its value is still the latest."""
         if not self._latest:
             raise asyncio.QueueEmpty
-        _, item = self._latest.popitem()
-        return item
+        return self._latest.pop(next(iter(self._latest)))
 
     async def get(self) -> Any:
         while not self._latest:
@@ -79,6 +80,7 @@ class Bus:
         self._drop_counts: dict[str, int] = defaultdict(int)
         self._command_handlers: dict[type, Callable[..., Awaitable[Any]]] = {}
         self._typed_subscribers: dict[type, list[asyncio.Queue]] = defaultdict(list)
+        self._handlers: dict[str, list[Callable[[Any], Awaitable[None]]]] = defaultdict(list)
 
     # --- string-topic pub/sub ------------------------------------------------
 
@@ -103,9 +105,17 @@ class Bus:
         self._subscribers[topic].append(sub)
         return sub
 
+    def add_handler(self, topic: str, handler: Callable[[Any], Awaitable[None]]) -> None:
+        """Register an inline handler: `publish` awaits it before returning, so the
+        publisher is paced by the handler. Replay uses this for deterministic, lookahead-free
+        processing (each event is fully handled before the clock advances); the Recorder
+        uses it to capture events in exact publish order."""
+        self._handlers[topic].append(handler)
+
     async def publish(self, topic: str, payload: Any) -> None:
         """Publish to all subscribers of a topic. Bounded queues drop-oldest under
-        backpressure (logged); coalescing buffers overwrite per key."""
+        backpressure (logged); coalescing buffers overwrite per key. Inline handlers run
+        last, in registration order."""
         for sub in self._subscribers.get(topic, []):
             if isinstance(sub, CoalescingBuffer):
                 sub.put_nowait(payload)
@@ -125,6 +135,8 @@ class Bus:
                     sub.put_nowait(payload)
                 except asyncio.QueueFull:
                     logger.error("bus.double_drop", topic=topic)
+        for handler in self._handlers.get(topic, []):
+            await handler(payload)
 
     # --- typed command routing -----------------------------------------------
 
