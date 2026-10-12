@@ -69,8 +69,8 @@ def _install_stub_sdk():
 
 _install_stub_sdk()
 
-from oraclebook.adapters.polymarket import PolymarketExecutor  # noqa: E402
-from oraclebook.adapters.polymarket.executor import resolve_builder_code  # noqa: E402
+from oraclebook.adapters.polymarket import PolymarketExecutor
+from oraclebook.adapters.polymarket.executor import resolve_builder_code
 
 
 class _FakeClient:

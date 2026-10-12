@@ -14,12 +14,12 @@ from oraclebook.adapters.polymarket.markets import discover, market_by_slug, upd
 from oraclebook.adapters.polymarket.venue import PolymarketVenue
 
 __all__ = [
-    "PolymarketVenue",
     "PolymarketExecutor",
     "PolymarketFeed",
+    "PolymarketVenue",
     "discover",
-    "market_by_slug",
-    "updown_slug",
     "fee_amount",
+    "market_by_slug",
     "taker_fee_per_share",
+    "updown_slug",
 ]

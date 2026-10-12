@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, Union
+from typing import Any
 
 import structlog
 
@@ -57,7 +57,7 @@ class CoalescingBuffer:
         return len(self._latest)
 
 
-Subscription = Union[asyncio.Queue, CoalescingBuffer]
+Subscription = asyncio.Queue | CoalescingBuffer
 
 
 class Bus:
@@ -194,7 +194,7 @@ class Bus:
         while running():
             try:
                 yield await asyncio.wait_for(sub.get(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except asyncio.CancelledError:
                 break

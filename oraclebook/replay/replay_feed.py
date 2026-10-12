@@ -87,7 +87,7 @@ class ReplayFeed:
                 self._clock.advance_to(rec["ts"])
                 await self._bus.publish(rec["topic"], _restore(cls, rec["payload"]))
                 await asyncio.sleep(0)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — re-raised from wait_done()
             self._error = exc
         finally:
             self._done.set()

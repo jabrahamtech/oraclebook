@@ -61,7 +61,7 @@ class Recorder:
         if directory:
             os.makedirs(directory, exist_ok=True)
         self._seq = _next_seq(path)
-        self._fh = open(path, "a", encoding="utf-8")
+        self._fh = open(path, "a", encoding="utf-8")  # noqa: SIM115 — held while recording
         self._last_flush = time.monotonic()
 
     async def start(self) -> None:

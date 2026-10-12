@@ -24,7 +24,7 @@ class ReplayClock:
     """Virtual clock driven by the replay driver. Monotonic: `advance_to` rejects
     rewind in strict mode so tests catch any attempt to move time backwards."""
 
-    __slots__ = ("_t", "_strict")
+    __slots__ = ("_strict", "_t")
 
     def __init__(self, start: float = 0.0, *, strict: bool = True) -> None:
         self._t = start

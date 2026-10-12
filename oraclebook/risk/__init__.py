@@ -19,15 +19,15 @@ from oraclebook.risk.gates import (
 )
 
 __all__ = [
-    "CircuitBreaker",
-    "OrderValidityGate",
-    "InventoryGate",
-    "FeedStalenessGate",
-    "DailyLossGate",
-    "OrderSizeGate",
     "BalanceGate",
+    "CircuitBreaker",
+    "DailyLossGate",
+    "FeedStalenessGate",
+    "InventoryGate",
+    "MaxPositionsGate",
+    "OrderSizeGate",
+    "OrderValidityGate",
     "PerMarketCapGate",
     "TotalExposureGate",
-    "MaxPositionsGate",
     "run_gates",
 ]

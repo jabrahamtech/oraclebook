@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -106,7 +106,7 @@ class App:
         return self.book.realized_pnl - self._day_start_realized
 
     def _utc_day(self) -> str:
-        return datetime.fromtimestamp(self.clock.now(), tz=timezone.utc).date().isoformat()
+        return datetime.fromtimestamp(self.clock.now(), tz=UTC).date().isoformat()
 
     async def start(self) -> None:
         """Wire handlers, spawn consumers, and start the feed. Returns once running."""

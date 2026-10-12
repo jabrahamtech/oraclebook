@@ -127,12 +127,12 @@ async def test_replay_fill_ts_equals_triggering_event_even_when_strategy_awaits(
             return await super().on_book(book)
 
     rec = tmp_path / "rec.jsonl"
-    with open(rec, "w") as f:
-        for i in range(10):
-            ts = 1000.0 + i * 60
-            f.write(json.dumps({"seq": i, "topic": "book_update", "ts": ts, "type": "BookUpdate",
-                                "payload": {"token_id": f"T{i}", "market_id": "m", "ts": ts,
-                                            "best_bid": 0.5, "best_ask": 0.51}}) + "\n")
+    rec.write_text("".join(
+        json.dumps({"seq": i, "topic": "book_update", "ts": 1000.0 + i * 60, "type": "BookUpdate",
+                    "payload": {"token_id": f"T{i}", "market_id": "m", "ts": 1000.0 + i * 60,
+                                "best_bid": 0.5, "best_ask": 0.51}}) + "\n"
+        for i in range(10)
+    ))
     app = await run_replay(str(rec), SlowTaker(), ledger_path=str(tmp_path / "l.jsonl"))
     fills = [f["payload"] for f in app.ledger.fills()]
     assert len(fills) == 10

@@ -45,7 +45,7 @@ class Ledger:
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        self._fh = open(path, mode, encoding="utf-8")
+        self._fh = open(path, mode, encoding="utf-8")  # noqa: SIM115 — held for the run
 
     def record(self, topic: str, obj: Any, ts: float | None = None) -> None:
         """Append one event: {topic, ts, payload}."""

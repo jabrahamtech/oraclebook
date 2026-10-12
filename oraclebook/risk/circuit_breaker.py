@@ -60,9 +60,7 @@ class CircuitBreaker:
             return False
         if self._latched:
             return True
-        if self._clock.now() - self._tripped_at >= self.cooldown_seconds:
-            return False
-        return True
+        return self._clock.now() - self._tripped_at < self.cooldown_seconds
 
     @property
     def trip_reason(self) -> str:
