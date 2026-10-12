@@ -9,8 +9,10 @@ from oraclebook.risk.gates import (
     BalanceGate,
     DailyLossGate,
     FeedStalenessGate,
+    InventoryGate,
     MaxPositionsGate,
     OrderSizeGate,
+    OrderValidityGate,
     PerMarketCapGate,
     TotalExposureGate,
     run_gates,
@@ -18,6 +20,8 @@ from oraclebook.risk.gates import (
 
 __all__ = [
     "CircuitBreaker",
+    "OrderValidityGate",
+    "InventoryGate",
     "FeedStalenessGate",
     "DailyLossGate",
     "OrderSizeGate",

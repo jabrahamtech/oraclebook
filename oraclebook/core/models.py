@@ -133,7 +133,8 @@ class RiskCheck:
 class RiskContext:
     """Immutable snapshot passed to every Gate so checks stay pure (no I/O, no
     state). Gates carry their own limits as constructor args; the context supplies
-    the live account state they evaluate against."""
+    the live account state they evaluate against. `open_orders` are resting, not-yet-filled
+    orders (each `size` is the remaining size), so exposure checks see committed capital."""
 
     balance: float
     daily_pnl: float
