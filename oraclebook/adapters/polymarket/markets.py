@@ -10,8 +10,13 @@ import json
 import time
 import urllib.request
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
+
+import structlog
 
 from oraclebook.core.models import Market
+
+logger = structlog.get_logger()
 
 GAMMA = "https://gamma-api.polymarket.com"
 
@@ -33,34 +38,89 @@ def _get(url: str, timeout: float = 15.0):
         return json.load(r)
 
 
+def _json_field(value):
+    """Gamma encodes some list/object fields as JSON strings."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return None
+    return value
+
+
+def _tick_str(value) -> str:
+    try:
+        return format(Decimal(str(value)).normalize(), "f")
+    except InvalidOperation:
+        return "0.01"
+
+
+def _fee_meta(m: dict) -> tuple[dict, bool, bool]:
+    """(fee meta, fee_verified, fee_taker_only) from Gamma's feesEnabled + feeSchedule."""
+    if m.get("feesEnabled") is False:
+        return {"fee_rate": 0.0, "fee_exponent": 1.0}, True, True
+    schedule = _json_field(m.get("feeSchedule"))
+    if not isinstance(schedule, dict):
+        return {}, False, True
+    try:
+        meta = {
+            "fee_rate": float(schedule["rate"]),
+            "fee_exponent": float(schedule["exponent"]),
+            "fee_rebate_rate": float(schedule.get("rebateRate") or 0.0),
+        }
+    except (KeyError, TypeError, ValueError):
+        logger.warning("polymarket_markets.bad_fee_schedule", market=m.get("id"), schedule=schedule)
+        return {}, False, True
+    return meta, True, bool(schedule.get("takerOnly", True))
+
+
 def _to_market(m: dict) -> Market | None:
     cond = m.get("conditionId")
     if not cond:
         return None
-    toks = m.get("clobTokenIds")
-    outs = m.get("outcomes")
-    if isinstance(toks, str):
-        toks = json.loads(toks)
-    if isinstance(outs, str):
-        outs = json.loads(outs)
+    toks = list(_json_field(m.get("clobTokenIds")) or ())
+    outs = list(_json_field(m.get("outcomes")) or ())
+    if outs and len(outs) != len(toks):
+        # outcomes[i] labels clobTokenIds[i]; without a 1:1 pairing the labels are unusable.
+        logger.warning("polymarket_markets.outcome_token_mismatch", market=m.get("id"),
+                       outcomes=outs, tokens=toks)
+        return None
     end_ts: float | None = None
     if m.get("endDate"):
         try:
             end_ts = datetime.fromisoformat(m["endDate"]).timestamp()
         except ValueError:
             pass
+    fee_meta, fee_verified, fee_taker_only = _fee_meta(m)
+    meta = {
+        "slug": m.get("slug", ""),
+        "token_by_outcome": dict(zip(outs, toks, strict=True)) if outs else {},
+        **fee_meta,
+    }
+    if m.get("negRisk") is not None:
+        meta["neg_risk"] = bool(m["negRisk"])
     return Market(
         venue="polymarket",
         market_id=str(m.get("id") or cond),
         condition_id=cond,
-        token_ids=tuple(toks or ()),
-        outcomes=tuple(outs or ()),
-        tick_size=str(m.get("orderPriceMinTickSize", "0.01")),
+        token_ids=tuple(toks),
+        outcomes=tuple(outs),
+        tick_size=_tick_str(m.get("orderPriceMinTickSize") or "0.01"),
         min_order_size=float(m.get("orderMinSize") or 0.0),
         end_ts=end_ts,
-        fee_taker_only=True,
-        meta={"slug": m.get("slug", "")},
+        fee_taker_only=fee_taker_only,
+        fee_verified=fee_verified,
+        meta=meta,
     )
+
+
+def token_for_outcome(market: Market, outcome: str) -> str | None:
+    """The token id for an outcome label (case-insensitive), e.g. "Up" or "No". Token order
+    follows Gamma's `outcomes`; never assume the first token is YES/Up."""
+    for label, token in market.meta.get("token_by_outcome", {}).items():
+        if label.lower() == outcome.lower():
+            return token
+    return None
 
 
 def market_by_slug(slug: str) -> Market | None:
