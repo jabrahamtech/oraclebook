@@ -114,19 +114,25 @@ Public sources to run the tests on:
 
 ## Empirical check on real resolved markets
 
-The favourite–longshot bias was tested directly on three public datasets of real resolved
-markets, all hosted on GitHub. Kaggle and HuggingFace were not reachable from the research
-environment.
+The favourite–longshot bias was tested directly on six public datasets of real resolved
+markets: three on GitHub (A–C) and three on Kaggle (D–F, added 2026-10-15). Scripts and full
+tables are in [`research/flb/`](../research/flb/).
+Kaggle datasets that lacked pre-close prices or outcomes, or anchored prices on the actual
+resolution time, were screened out (listed in `flb_results.md`).
 
 | | Source | Coverage | Price used |
 |---|---|---|---|
 | A | `usepancake/polymarket-history` (CC BY 4.0, non-commercial) | 7,331 resolved Polymarket binaries, 2023-03 → 2026-05 | daily 00:00 UTC price (no bid/ask) |
 | B | `J0shusmc/Kalshi-BTC` (MIT) | 6,330 Kalshi `KXBTC15M` markets, 2026-06-15 → 08-20 | 1-minute YES bid/ask; buys at the ask |
 | C | `marketlenstrade/polymarket-historical-data` (CC BY 4.0) | 2,249 Polymarket markets on 7 days in 2026 | best bid/ask |
+| D | Kaggle `kachoio/polymarket-5-minute-crypto-updown-markets` (CC0) | 83,159 Polymarket 5-minute crypto Up/Down markets, 2026-03 → 05 | per-second bid/ask; outcome *inferred* from the final tick |
+| E | Kaggle `polyorderbooks/polymarket-crypto-orderbooks-1s-l2` (CC BY 4.0) | 686 Polymarket crypto 5m/15m/4h markets, 2026-08-21 → 24 | ~1-second bid/ask |
+| F | Kaggle `madrading/polymarket-2026-fifa-world-cup-order-book` (CC BY-NC 4.0) | 15,333 World Cup markets in 923 events, 2026-03 → 08 | 1-minute bid/ask; official results |
 
-Return per $1 from buying at price `p` (EW = equal weight per contract). The 95% CIs come from
-a bootstrap with 5,000 replications and a fixed seed, resampling markets for EW and events for
-the clustered column.
+Every horizon is measured back from the **scheduled** end or close time, not the actual
+resolution. Return per $1 from buying at price `p` (EW = equal weight per contract). The 95%
+CIs come from a market-clustered bootstrap (5,000 replications, fixed seed) for EW, and from
+resampling events for the clustered column. Books wider than 5¢ are skipped in C–F.
 
 | Data, horizon | Bin | n | Win rate vs price | Gross EW [CI] | Clustered [CI] | After fees |
 |---|---|---|---|---|---|---|
@@ -137,6 +143,18 @@ the clustered column.
 | B, 5m | ≤0.10 | 2,892 | .036 vs .043 | −12% [−32, +11] | −9% [−31, +15] | −34% [−47, −19] |
 | B, 1m | ≤0.10 | 5,555 | .008 vs .009 | −59% [−82, −28] | −58% [−82, −25] | −82% [−88, −74] |
 | C, open+5m | ≥0.90 | 178 | .949 vs .962 | −1.3% [−5.0, +1.8] | −1.1% [−5.4, +2.2] | −1.6% (r=0.07) |
+| D, 1m to window end | ≥0.90 | 33,307 | .977 vs .964 | +1.3% [+1.2, +1.5]\* | +1.3% [+1.0, +1.6] | +1.1% (r=0.07) |
+| D, 30s | ≥0.90 | 32,519 | .982 vs .971 | +1.2% [+1.0, +1.3]\* | +0.8% [+0.0, +1.4] | +1.0% |
+| D, 1m | ≤0.10 | 40,770 | .017 vs .038 | −64% [−67, −60] | −61% [−67, −55] | −66% |
+| E, 15m contract, 5m to end | ≥0.90 | 93 | .978 vs .968 | +1.1% [−2.4, +3.6] | +0.4% [−4.5, +3.5] | +0.8% |
+| E, 5m contract, 1m to end | ≥0.90 | 145 | .945 vs .979 | −3.5% [−7.7, +0.1] | −4.7% [−10.6, +0.3] | −3.6% |
+| F, 1d to scheduled end | ≥0.90 | 4,828 | .968 vs .970 | −0.2% [−0.7, +0.3] | −1.1% [−2.7, +0.4] | −0.4% [−1.0, +0.1] |
+| F, 1h | ≥0.90 | 7,290 | .972 vs .974 | −0.3% [−0.7, +0.1] | −0.6% [−2.2, +0.8] | −0.5% [−0.9, −0.1] |
+| F, 1h | ≤0.10 | 6,932 | .023 vs .038 | −50% [−60, −39] | −23% [−46, +3] | −53% [−62, −43] |
+
+\* D excludes the 8,876 markets whose inferred outcome is null — the close calls. Setting every
+null-outcome contract to lose turns the D favourite rows into −3.6% (1m) and −4.8% (30s);
+setting them to win gives +1.5% and +1.4%. The sign of the D favourite return is not identified.
 
 Calibration slope, from a logistic regression of the outcome on logit(price); a slope above 1
 is the classic bias. CIs come from resampling events.
@@ -150,18 +168,33 @@ is the classic bias. CIs come from resampling events.
 | B, 5m | 1.05 [1.00, 1.10] |
 | B, 1m | 1.08 [1.00, 1.19] |
 | C, open+5m | 0.98 [0.82, 1.21] |
+| D, 4m | 1.16 [1.11, 1.20]\* |
+| D, 30s | 1.27 [1.24, 1.31]\* |
+| E, 15m contract, 5m | 1.28 [0.99, 1.94] |
+| F, 7d | 1.03 [0.92, 1.17] |
+| F, 1d | 1.05 [0.98, 1.12] |
+| F, 1h | 1.03 [0.96, 1.09] |
+
+\* Probably inflated: dropping close calls removes the mid-priced contracts whose outcome stayed
+uncertain, which pushes the slope above 1.
 
 **What this says.**
-- **Favourites:** taking 90¢+ favourites at executable prices shows **no edge** in any dataset or
-  at any horizon. Gross returns are within ±1–2% with CIs spanning zero, and slightly negative
-  after Kalshi fees.
-- **Longshots:** Kalshi's short-horizon longshots lose heavily at the ask, consistent with the
-  literature.
-- **Polymarket's daily prices lean the other way** (slope < 1). This may be an artefact of a
-  last-trade or mid price in thin books, so re-test it on bid/ask data before acting on it.
-- **Revision to idea #1:** the *taker* version of favourite carry is falsified on these
-  samples. Only the *maker* version remains untested, and it needs fill-conditional data —
-  recorded L2 replayed through the conservative paper executor.
+- **Favourites:** taking 90¢+ favourites at executable prices shows **no demonstrated edge**.
+  In A–C and F gross returns are within ±1–2% with CIs spanning zero, and slightly negative
+  after fees. The best new sample (F: about 900 World Cup events with official results) is flat
+  at every horizon. D's nominal +1.2–1.3% depends on how its unlabelled close calls resolved,
+  so it is not evidence either way. E is too small to sign.
+- **Longshots:** short-horizon longshots lose heavily at the ask on Kalshi (B) and Polymarket
+  crypto (D). In F, 1h longshots lose −50% when markets are resampled, but the CI reaches zero
+  when events are resampled (outcomes within a match move together).
+- **Polymarket's daily prices lean the other way** (slope < 1 in A). On executable World Cup
+  quotes (F) the slope is about 1 with CIs that include 1, which fits the price-field-artefact
+  explanation for A, though F covers different market types.
+- **Revision to idea #1:** unchanged. The *taker* version of favourite carry is falsified on
+  these samples. D's positive favourite cells do not reverse that, because their labels are not
+  official resolutions. Re-testing D would need the official resolution for each market. Only
+  the *maker* version remains untested, and it needs fill-conditional data — recorded L2
+  replayed through the conservative paper executor.
 
 **Look-ahead trap found in the process.** Measuring "7 days before resolution" from the
 *actual* resolution time leaks the outcome. "Will X happen by D?" markets that resolve Yes early
@@ -170,8 +203,13 @@ get sampled just before the event. In dataset A that moved the calibration inter
 end/close time.
 
 **Limitations.**
-- All three datasets are resolved-only.
+- All six datasets are resolved-only.
 - A has no event ids (category + end date stands in for the event) and no executable prices.
 - B is a single crypto series with 67 day-clusters.
 - C is a 7-day vendor sample.
+- D's outcomes are inferred from the final tick, not the official resolution, and 12% of its
+  markets have no outcome.
+- E covers 4 days and fewer than 700 markets.
+- F is one tournament. Most of its data is non-commercial (CC BY-NC), and quotes can be up to
+  6 h old because bars print only on quote changes.
 - Many bins and horizons were tested, so expect some cells to look significant by chance.

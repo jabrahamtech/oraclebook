@@ -34,3 +34,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# FLB research data + outputs (downloaded / regenerated, never committed)
+research/flb/data/
+research/flb/out/

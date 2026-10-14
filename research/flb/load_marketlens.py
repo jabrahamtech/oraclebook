@@ -19,6 +19,8 @@ MAX_SPREAD = 0.05
 rows = []
 ex = {}
 for d in sorted(glob.glob(f"{root}/*/")):
+    if not os.path.exists(d + "markets.csv"):
+        continue
     name = os.path.basename(d[:-1])
     m = pd.read_csv(d + "markets.csv")
     s = pd.read_csv(d + "snapshots.csv").sort_values("t_ms")
