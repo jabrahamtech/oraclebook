@@ -15,6 +15,7 @@ import http.client
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -26,6 +27,7 @@ import zipfile
 HERE = pathlib.Path(__file__).resolve().parent
 KAGGLE = "https://www.kaggle.com/api/v1/datasets/download"
 CODELOAD = "https://codeload.github.com"
+BINANCE = "https://data.binance.vision/data"
 CHUNK = 1 << 20
 
 
@@ -37,7 +39,43 @@ def sha256(path):
     return h.hexdigest()
 
 
-def download(url, dest, attempts=8):
+class NotFound(Exception):
+    pass
+
+
+def download(url, dest):
+    """curl where available (it has proven more reliable through proxies), else urllib."""
+    if shutil.which("curl"):
+        r = subprocess.run(
+            [
+                "curl",
+                "-sSL",
+                "--retry",
+                "8",
+                "--retry-all-errors",
+                "-o",
+                str(dest),
+                "-w",
+                "%{http_code}",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if r.stdout.strip() == "404":
+            raise NotFound(url)
+        if r.returncode or r.stdout.strip() not in ("200", "206"):
+            sys.exit(f"{url}: curl exit {r.returncode}, HTTP {r.stdout.strip()} {r.stderr.strip()}")
+        return
+    try:
+        _download_urllib(url, dest)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise NotFound(url) from e
+        raise
+
+
+def _download_urllib(url, dest, attempts=8):
     """Connections are sometimes cut mid-body, with or without an error. A cut body with a known
     length is resumed with a Range request; anything else is downloaded again from the start."""
     have, total = 0, None
@@ -147,6 +185,48 @@ def fetch_kaggle_file(src, folder, name, want):
     return got
 
 
+def fetch_binance(src, folder):
+    """Monthly kline zips from data.binance.vision, checked against Binance's published sha256."""
+    folder.mkdir(parents=True, exist_ok=True)
+    got = {}
+    for market, symbols in src["symbols"].items():
+        for sym in symbols:
+            for month in src["months"]:
+                name = f"{sym}-{src['interval']}-{month}"
+                dest = folder / f"{market.replace('/', '_')}__{name}.csv"
+                if dest.exists():
+                    got[dest.name] = "present"
+                    continue
+                url = f"{BINANCE}/{market}/monthly/klines/{sym}/{src['interval']}/{name}.zip"
+                part = folder / f".{name}.zip.part"
+                try:
+                    download(url + ".CHECKSUM", part)
+                except NotFound:
+                    print(f"  {market} {name}: not published, skipped")
+                    got[dest.name] = "missing"
+                    continue
+                want = part.read_text().split()[0]
+                download(url, part)
+                if sha256(part) != want:
+                    part.unlink()
+                    sys.exit(f"{name}: sha256 does not match Binance's CHECKSUM")
+                with zipfile.ZipFile(part) as z, z.open(f"{name}.csv") as zi, open(dest, "wb") as f:
+                    shutil.copyfileobj(zi, f, CHUNK)
+                part.unlink()
+                got[dest.name] = want
+                print(f"  {dest.name}: downloaded")
+    (folder / "_source.json").write_text(
+        json.dumps(
+            {
+                "interval": src["interval"],
+                "zip_sha256": got,
+                "fetched_at": dt.datetime.now(dt.UTC).isoformat(),
+            },
+            indent=1,
+        )
+    )
+
+
 def fetch_kaggle(src, folder, optional):
     folder.mkdir(parents=True, exist_ok=True)
     files = dict(src["files"])
@@ -185,6 +265,8 @@ def main(argv):
         folder = root / src["folder"]
         if src["kind"] == "github":
             fetch_github(src, folder)
+        elif src["kind"] == "binance":
+            fetch_binance(src, folder)
         else:
             fetch_kaggle(src, folder, optional)
 

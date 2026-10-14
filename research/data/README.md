@@ -25,6 +25,7 @@ of being used. Each folder gets a `_source.json` recording what was fetched.
 | `kachoio` | Polymarket | 5-minute crypto Up/Down, per-second Up and Down books | **inferred** from the final tick; null for close calls | CC0 |
 | `polyorderbooks` | Polymarket | crypto Up/Down 5m / 15m / 4h, ~1 s L2 books per outcome | official | CC BY 4.0, cite doi 10.5281/zenodo.22084114 |
 | `worldcup` | Polymarket | every 2026 World Cup market, 1-minute bid/ask bars (first outcome) | official | mostly CC BY-NC 4.0 (non-commercial) |
+| `binance` | Binance | 1-minute klines of the underlying coins (spot; HYPE from USDⓈ-M futures), Mar–Aug 2026; sha256 from Binance's CHECKSUM files; not a panel | – | Binance public data |
 
 ## 2. Build panels (`panels/`, git-ignored, ~0.5 GB, under a minute)
 

@@ -218,6 +218,7 @@ def build_kalshi(raw, put):
                     "y": 1 if mk["result"] == "yes" else 0,
                     "y_official": True,
                     "event_ticker": mk.get("event_ticker"),
+                    "strike": mk.get("floor_strike"),
                 }
             )
             quotes += [

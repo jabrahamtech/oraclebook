@@ -1,23 +1,36 @@
 {
  "pancake": {
-  "kind": "github", "repo": "usepancake/polymarket-history",
-  "commit": "356b59b01ae74cc558ae75d8dcf4b7971be5a509", "folder": "github_pancake",
-  "venue": "polymarket", "what": "daily candles, official resolutions, planned end times"
+  "kind": "github",
+  "repo": "usepancake/polymarket-history",
+  "commit": "356b59b01ae74cc558ae75d8dcf4b7971be5a509",
+  "folder": "github_pancake",
+  "venue": "polymarket",
+  "what": "daily candles, official resolutions, planned end times"
  },
  "kalshi": {
-  "kind": "github", "repo": "J0shusmc/Kalshi-BTC",
-  "commit": "d5a55bf10c02ddc2b429eec78b1fd847fa1b6760", "folder": "github_kalshi",
-  "venue": "kalshi", "what": "KXBTC15M 1-minute YES bid/ask candles, official results"
+  "kind": "github",
+  "repo": "J0shusmc/Kalshi-BTC",
+  "commit": "d5a55bf10c02ddc2b429eec78b1fd847fa1b6760",
+  "folder": "github_kalshi",
+  "venue": "kalshi",
+  "what": "KXBTC15M 1-minute YES bid/ask candles, official results"
  },
  "marketlens": {
-  "kind": "github", "repo": "marketlenstrade/polymarket-historical-data",
-  "commit": "6eb9b8efda545eddafb2a8f75acb4bcbca6db019", "folder": "github_marketlens",
-  "venue": "polymarket", "what": "top-of-book snapshots across several series, official resolutions"
+  "kind": "github",
+  "repo": "marketlenstrade/polymarket-historical-data",
+  "commit": "6eb9b8efda545eddafb2a8f75acb4bcbca6db019",
+  "folder": "github_marketlens",
+  "venue": "polymarket",
+  "what": "top-of-book snapshots across several series, official resolutions"
  },
  "kachoio": {
-  "kind": "kaggle", "ref": "kachoio/polymarket-5-minute-crypto-updown-markets", "version": 1,
-  "folder": "kaggle_kachoio__polymarket-5-minute-crypto-updown-markets", "licence": "CC0-1.0",
-  "venue": "polymarket", "what": "5-minute crypto Up/Down, per-second Up and Down books; outcome inferred by the publisher",
+  "kind": "kaggle",
+  "ref": "kachoio/polymarket-5-minute-crypto-updown-markets",
+  "version": 1,
+  "folder": "kaggle_kachoio__polymarket-5-minute-crypto-updown-markets",
+  "licence": "CC0-1.0",
+  "venue": "polymarket",
+  "what": "5-minute crypto Up/Down, per-second Up and Down books; outcome inferred by the publisher",
   "files": {
    "bnb_markets.parquet": "a92e99a096b70ddb7968478ceea4edb501b5f5f79faa69610db74241f547754a",
    "bnb_ticks.parquet": "1958c9643a15add7620703329f47d3f67d8ff4c5c8d6115696bc745fb866478e",
@@ -36,10 +49,13 @@
   }
  },
  "polyorderbooks": {
-  "kind": "kaggle", "ref": "polyorderbooks/polymarket-crypto-orderbooks-1s-l2", "version": 1,
+  "kind": "kaggle",
+  "ref": "polyorderbooks/polymarket-crypto-orderbooks-1s-l2",
+  "version": 1,
   "folder": "kaggle_polyorderbooks__polymarket-crypto-orderbooks-1s-l2",
   "licence": "CC-BY-4.0 (cite doi 10.5281/zenodo.22084114)",
-  "venue": "polymarket", "what": "crypto Up/Down 5m/15m/4h, ~1-second L2 books per outcome token",
+  "venue": "polymarket",
+  "what": "crypto Up/Down 5m/15m/4h, ~1-second L2 books per outcome token",
   "files": {
    "updown_5m.parquet": "166822b28caa160bb8321c548a8d2ef02b15ae0f06975dd05fced7f4ae118d11",
    "updown_15m.parquet": "d86191506e416026f460338b1b238c628b3fcee37f468e646b3a2256bd0be959",
@@ -47,10 +63,13 @@
   }
  },
  "worldcup": {
-  "kind": "kaggle", "ref": "madrading/polymarket-2026-fifa-world-cup-order-book", "version": 2,
+  "kind": "kaggle",
+  "ref": "madrading/polymarket-2026-fifa-world-cup-order-book",
+  "version": 2,
   "folder": "kaggle_madrading__polymarket-2026-fifa-world-cup-order-book",
   "licence": "CC-BY-NC-4.0 (tickfoundry rows) / CC-BY-4.0 (pmxt rows)",
-  "venue": "polymarket", "what": "2026 World Cup markets, 1-minute bid/ask bars, official resolutions",
+  "venue": "polymarket",
+  "what": "2026 World Cup markets, 1-minute bid/ask bars, official resolutions",
   "files": {
    "README.md": "a70508fe23bec7793f7da75d2c7de7bddf281bf22da0fcfefeb74d530a48ceaf",
    "outcomes.csv": "602eeb1b70ed4ad174c4c232d6f92ca5a182678c47a078db8c85fe87b12d7f9a",
@@ -59,7 +78,43 @@
    "reference_tokens.csv": "51d240d9e6bcda68cec187f4054f622002875c4cb9554b57c3b5c33d3b1500e3",
    "candles_1m_mid.parquet": "7514fb666b94316b38a665baa0d1ff0700b8f67786f900ed1803466caa8ac043"
   },
-  "optional_files": ["candles_1m_tape.parquet", "trades.parquet", "trades_onchain.parquet",
-                     "depth_final_2026-07-19_l2.parquet", "sports_state.parquet", "reference_series.csv"]
+  "optional_files": [
+   "candles_1m_tape.parquet",
+   "trades.parquet",
+   "trades_onchain.parquet",
+   "depth_final_2026-07-19_l2.parquet",
+   "sports_state.parquet",
+   "reference_series.csv"
+  ]
+ },
+ "binance": {
+  "kind": "binance",
+  "interval": "1m",
+  "folder": "binance_klines_1m",
+  "venue": "binance",
+  "licence": "Binance public market data (data.binance.vision)",
+  "what": "1-minute klines of the underlying coins, for fair-value and outcome checks",
+  "symbols": {
+   "spot": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+    "BNBUSDT",
+    "ZECUSDT"
+   ],
+   "futures/um": [
+    "HYPEUSDT"
+   ]
+  },
+  "months": [
+   "2026-03",
+   "2026-04",
+   "2026-05",
+   "2026-06",
+   "2026-07",
+   "2026-08"
+  ]
  }
 }
