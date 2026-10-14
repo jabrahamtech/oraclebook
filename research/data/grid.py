@@ -206,7 +206,7 @@ def main():
     # One OS process per job (threads only wait on them), so every core is used.
     cmd = [sys.executable, "-I", __file__, a.panel_root, a.out_dir, "--boot", str(a.boot), "--one"]
     with ThreadPoolExecutor(max_workers=min(a.jobs, len(idx))) as ex:
-        codes = list(ex.map(lambda i: subprocess.run([*cmd, str(i)]).returncode, idx))
+        codes = list(ex.map(lambda i: subprocess.run([*cmd, str(i)], check=False).returncode, idx))
     if any(codes):
         sys.exit(f"{sum(c != 0 for c in codes)} job(s) failed")
     g = pd.concat([pd.read_pickle(parts / f"{i:02d}.pkl") for i in idx], ignore_index=True)
