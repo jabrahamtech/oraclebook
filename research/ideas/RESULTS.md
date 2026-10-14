@@ -1,4 +1,6 @@
-# Idea tests: results
+# Idea tests: results (round 1)
+
+Round 2, on fresh Kalshi data: [RESULTS_V2.md](RESULTS_V2.md).
 
 Protocol: [PROTOCOL.md](PROTOCOL.md) (written before testing). Frozen rules: [CANDIDATES.md](CANDIDATES.md).
 Every dataset was split by scheduled close: earliest 60% exploration, latest 40% holdout. About

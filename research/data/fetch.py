@@ -192,13 +192,16 @@ def fetch_binance(src, folder):
     got = {}
     for market, symbols in src["symbols"].items():
         for sym in symbols:
-            for month in src["months"]:
+            periods = [("monthly", x) for x in src["months"]] + [
+                ("daily", x) for x in src.get("days", [])
+            ]
+            for freq, month in periods:
                 name = f"{sym}-{src['interval']}-{month}"
                 dest = folder / f"{market.replace('/', '_')}__{name}.csv"
                 if dest.exists():
                     got[dest.name] = "present"
                     continue
-                url = f"{BINANCE}/{market}/monthly/klines/{sym}/{src['interval']}/{name}.zip"
+                url = f"{BINANCE}/{market}/{freq}/klines/{sym}/{src['interval']}/{name}.zip"
                 part = folder / f".{name}.zip.part"
                 try:
                     download(url + ".CHECKSUM", part)
