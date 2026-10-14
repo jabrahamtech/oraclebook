@@ -18,8 +18,8 @@ import sys
 import numpy as np
 import pandas as pd
 
-HERE = pathlib.Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parent / "flb")]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "flb"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import flb_lib as L
 import panels as P
 

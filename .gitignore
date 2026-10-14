@@ -38,5 +38,6 @@ htmlcov/
 # Research data + outputs (downloaded / regenerated, never committed)
 research/data/raw/
 research/data/panels/
+research/data/out/
 research/flb/data/
 research/flb/out/

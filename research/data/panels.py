@@ -553,9 +553,10 @@ def contracts(snap, max_spread=None, complement=True):
     first token's book.
     """
     s = snap.copy()
-    book = s.ask.notna() if "ask" in s else pd.Series(False, index=s.index)
-    if "price" not in s:
-        s["price"] = np.nan
+    for col in ("bid", "ask", "price"):
+        if col not in s:
+            s[col] = np.nan
+    book = s.ask.notna()
     inside = (s.bid > 0) & (s.ask < 1) & (s.bid <= s.ask)
     mid = ((s.bid + s.ask) / 2).where(inside)
     tight = (

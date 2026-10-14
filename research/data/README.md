@@ -66,4 +66,20 @@ obs = P.contracts(snap, max_spread=0.05)   # market_id, event_id, side, p_buy, p
 anchoring on the scheduled `close_ts` is look-ahead-free. Anchoring on `resolved_ts` is possible
 but leaks the outcome for markets that resolve early (see `../flb/flb_results.md`).
 
+## 4. Run everything in parallel
+
+```bash
+PY=path/to/python ./run_all.sh        # fetch/verify -> panels -> FLB loaders -> FLB report,
+                                      # panel check and methodology grid; each stage uses all cores
+python -I grid.py panels out          # just the grid: writes out/grid.csv (git-ignored)
+```
+
+`grid.py` runs every dataset under a grid of methodology variants: scheduled vs actual-resolution
+anchor (the latter leaks the outcome and is there to show that bias), spread cap none / 5c / 2c,
+and buying at the ask vs at the mid (a no-spread reference, not an achievable fill). Each
+(dataset, anchor, horizon, spread cap) is its own OS process, so the 129 jobs spread across every
+core (about 2 minutes on a 14-core laptop; the whole pipeline about 6). Every row has favourite
+(>= 0.90) and longshot (<= 0.10) returns per $1, gross and net of fees, CIs from resampling
+markets and from resampling events (both around the pooled mean), and the calibration slope.
+
 These are descriptive research tools; nothing here shows that any strategy is profitable.
