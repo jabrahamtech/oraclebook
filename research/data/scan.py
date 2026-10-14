@@ -20,8 +20,8 @@ import pandas as pd
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "flb")]
-import flb_lib as L  # noqa: E402
-import panels as P  # noqa: E402
+import flb_lib as L
+import panels as P
 
 ap = argparse.ArgumentParser(usage=__doc__)
 ap.add_argument("panel_root")
