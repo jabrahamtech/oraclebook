@@ -52,7 +52,7 @@ def main():
     ap.add_argument("--hi", type=float, default=0.90)
     ap.add_argument("--alpha", type=float, default=0.05)
     a = ap.parse_args()
-    m, t = kx.load(a.series.split(","))
+    _m, t = kx.load(a.series.split(","))
     if a.mode == "holdout":
         n, f = sim(t[t.split == "holdout"], a.post, a.end, lo=a.lo, hi=a.hi)
         print(

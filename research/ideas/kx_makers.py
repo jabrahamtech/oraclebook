@@ -41,7 +41,7 @@ BANDS = [0, 0.05, 0.10, 0.20, 0.35, 0.50, 0.65, 0.80, 0.90, 0.95, 1.0]
 
 def c1():
     have = [s for s in SPORTS if s in kx.available()]
-    m, t = kx.load(have)
+    _m, t = kx.load(have)
     t = kx.sides(t)
     occ = t.occurrence_datetime.fillna(t.close_time)
     t = t[(t.ts < occ - pd.Timedelta(hours=4)) & (t.ts >= occ - pd.Timedelta(hours=12))]
@@ -78,7 +78,7 @@ def band_table(t, who):
 
 
 def mapping(series):
-    m, t = kx.load(series)
+    _m, t = kx.load(series)
     t = kx.sides(t[t.split == "explore"])
     for s, g in t.groupby("series"):
         print(f"\n{s}: {len(g):,} trades, {g.event_ticker.nunique()} events (exploration)")
