@@ -61,6 +61,7 @@ def download(url, dest):
             ],
             capture_output=True,
             text=True,
+            check=False,
         )
         if r.stdout.strip() == "404":
             raise NotFound(url)
