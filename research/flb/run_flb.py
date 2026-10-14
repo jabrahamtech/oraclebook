@@ -174,8 +174,11 @@ sections.append("\n".join(sec))
 
 def bounds_md(obs):
     """Headline bins with null-outcome contracts set to all-lose (worst) and all-win (best)."""
-    lines = ["| bin | n with outcome | n outcome null | null share | EW, outcome known [95% CI] | "
-             "EW, nulls lose [95% CI] | EW, nulls win [95% CI] |", "|---|---|---|---|---|---|---|"]
+    lines = [
+        ("| bin | n with outcome | n outcome null | null share | EW, outcome known [95% CI] | "
+         "EW, nulls lose [95% CI] | EW, nulls win [95% CI] |"),
+        "|---|---|---|---|---|---|---|",
+    ]
     for lo, hi, incl in L.HEADLINE:
         sel = obs[L.in_bin(obs.p_buy.to_numpy(), lo, hi, incl)]
         null = sel.y.isna()
