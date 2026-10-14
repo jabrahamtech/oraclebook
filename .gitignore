@@ -35,6 +35,8 @@ htmlcov/
 .idea/
 .vscode/
 
-# FLB research data + outputs (downloaded / regenerated, never committed)
+# Research data + outputs (downloaded / regenerated, never committed)
+research/data/raw/
+research/data/panels/
 research/flb/data/
 research/flb/out/
