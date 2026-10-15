@@ -110,9 +110,12 @@ def chat(args):
     }
     if args.get("format"):
         body["format"] = args["format"]
+    if "think" in args:
+        body["think"] = args["think"]
     d = http(base(args) + "/api/chat", body, timeout=int(args.get("timeout", 600)))
     return {
         "content": d.get("message", {}).get("content"),
+        "thinking": d.get("message", {}).get("thinking"),
         "eval_count": d.get("eval_count"),
         "total_duration_s": round((d.get("total_duration") or 0) / 1e9, 2),
     }
@@ -147,6 +150,7 @@ TOOLS = {
             "system": {"type": "string"},
             "temperature": {"type": "number"},
             "format": {"description": "'json' or a JSON schema for structured output"},
+            "think": {"type": "boolean", "description": "reasoning models: thinking on / off"},
             "options": {"type": "object", "description": "extra Ollama options (num_ctx, ...)"},
             "timeout": {"type": "integer", "description": "seconds, default 600"},
         },
