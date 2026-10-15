@@ -200,7 +200,7 @@ def handle(msg):
         try:
             out = tool[0](p.get("arguments") or {})
             reply(id_, {"content": [{"type": "text", "text": json.dumps(out, indent=1)}]})
-        except Exception as e:  # report tool failures to the client, keep serving
+        except Exception as e:  # noqa: BLE001 — report tool failures to the client, keep serving
             reply(
                 id_,
                 {
