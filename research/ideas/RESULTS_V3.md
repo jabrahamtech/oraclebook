@@ -66,3 +66,5 @@ python -I kx_xmkt_report.py ../data/raw/live_xmkt/ob.csv
 python -I kx_live_wx.py ../data/raw/live_wx/books.csv --minutes 1440
 python -I wx_queue.py fetch ../data/raw/live_wx/books.csv && python -I wx_queue.py analyse ../data/raw/live_wx/books.csv
 ```
+
+Round 4 (machine learning, Chronos-Bolt, bull regimes, LLM forecasters): [RESULTS_V4.md](RESULTS_V4.md).

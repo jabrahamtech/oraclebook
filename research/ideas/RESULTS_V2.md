@@ -79,3 +79,5 @@ python -I kx_flow.py crypto holdout --k 0.2 --min-dollars 100 --alpha 0.016667
 
 Later rounds: [RESULTS_V3.md](RESULTS_V3.md) (weather after the observations, forecasts, live
 structural checks) and [RESULTS_MACRO.md](RESULTS_MACRO.md) (macro nowcasts vs Kalshi).
+
+Round 4 (machine learning, Chronos-Bolt, bull regimes, LLM forecasters): [RESULTS_V4.md](RESULTS_V4.md).

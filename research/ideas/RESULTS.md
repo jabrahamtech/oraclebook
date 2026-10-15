@@ -65,3 +65,5 @@ python -I kalshi_maker.py holdout --horizon 5m --side fav --lo 0.9 --hi 0.98 --f
 
 Later rounds: [RESULTS_V3.md](RESULTS_V3.md) (weather after the observations, forecasts, live
 structural checks) and [RESULTS_MACRO.md](RESULTS_MACRO.md) (macro nowcasts vs Kalshi).
+
+Round 4 (machine learning, Chronos-Bolt, bull regimes, LLM forecasters): [RESULTS_V4.md](RESULTS_V4.md).
