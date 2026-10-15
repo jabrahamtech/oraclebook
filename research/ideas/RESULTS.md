@@ -62,3 +62,6 @@ python -I harvest.py holdout --at 125min --lo 0.98 --hi 0.999 --alpha 0.0125
 python -I maker_tape.py holdout --horizon 1d --side no --lo 0.01 --hi 0.10 --alpha 0.0125
 python -I kalshi_maker.py holdout --horizon 5m --side fav --lo 0.9 --hi 0.98 --fee 0.0175 --alpha 0.0125
 ```
+
+Later rounds: [RESULTS_V3.md](RESULTS_V3.md) (weather after the observations, forecasts, live
+structural checks) and [RESULTS_MACRO.md](RESULTS_MACRO.md) (macro nowcasts vs Kalshi).

@@ -7,7 +7,10 @@ Responses are untrusted data: parsed as JSON, never executed.
 
 Usage: python -I kalshi_api.py <raw_root> --series A,B,... --start 2026-08-15 --end 2026-10-15
        [--rps 10] [--threads 8] [--min-volume 1] [--markets-only]
-       [--close-window A,B] [--occurrence-window A,B] [--sample N]
+       [--close-window A,B] [--occurrence-window A,B] [--sample N] [--historical]
+
+Markets settled before Kalshi's historical cutoff (GET /historical/cutoff) are served only by
+/historical/markets and /historical/trades; --historical reads those instead.
 """
 
 import argparse
@@ -18,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 
@@ -81,25 +85,37 @@ def get(path, limiter, tries=20):
     sys.exit(f"GET {path} failed after {tries} tries (last HTTP {code})")
 
 
-def settled_markets(series, t0, t1, limiter):
+def settled_markets(series, t0, t1, limiter, historical=False):
+    """Settled markets closing in [t0, t1). Kalshi serves markets settled before its historical
+    cutoff (GET /historical/cutoff) only from /historical/markets, filtered here by close time."""
     out, cur = [], ""
     while True:
-        q = (
-            f"/markets?series_ticker={series}&status=settled&limit=1000"
-            f"&min_close_ts={t0}&max_close_ts={t1}"
-        )
+        if historical:
+            q = f"/historical/markets?series_ticker={series}&limit=200"
+        else:
+            q = (
+                f"/markets?series_ticker={series}&status=settled&limit=1000"
+                f"&min_close_ts={t0}&max_close_ts={t1}"
+            )
         d = get(q + (f"&cursor={cur}" if cur else ""), limiter)
         out += d.get("markets", [])
         cur = d.get("cursor")
         if not cur or not d.get("markets"):
-            return out
+            break
+    if historical:
+        close = pd.to_datetime([m["close_time"] for m in out], utc=True, format="ISO8601")
+        secs = (close - EPOCH) // pd.Timedelta(seconds=1)
+        out = [m for m, c in zip(out, secs, strict=True) if t0 <= c < t1]
+    return out
 
 
-def trades(ticker, limiter, min_ts=None, max_ts=None):
+def trades(ticker, limiter, min_ts=None, max_ts=None, historical=False):
     out, cur = [], ""
     win = (f"&min_ts={min_ts}" if min_ts else "") + (f"&max_ts={max_ts}" if max_ts else "")
+    path = "/historical/trades" if historical else "/markets/trades"
     while True:
-        q = f"/markets/trades?ticker={ticker}&limit=1000{win}" + (f"&cursor={cur}" if cur else "")
+        tk = urllib.parse.quote(ticker, safe="")  # a few old tickers contain spaces
+        q = f"{path}?ticker={tk}&limit=1000{win}" + (f"&cursor={cur}" if cur else "")
         d = get(q, limiter)
         out += [
             (
@@ -145,10 +161,11 @@ def fetch_series(
     close_window=None,
     occurrence_window=None,
     sample=None,
+    historical=False,
 ):
     folder = root / "kalshi_api" / series
     folder.mkdir(parents=True, exist_ok=True)
-    ms = settled_markets(series, t0, t1, limiter)
+    ms = settled_markets(series, t0, t1, limiter, historical)
     if not ms:
         print(f"{series}: no settled markets in window")
         return
@@ -177,7 +194,7 @@ def fetch_series(
     parts, n = [have], 0
     with ThreadPoolExecutor(max_workers=threads) as ex:
         win = window(m, close_window, occurrence_window)
-        for ticker, rows in ex.map(lambda t: trades(t, limiter, *win[t]), todo):
+        for ticker, rows in ex.map(lambda t: trades(t, limiter, *win[t], historical), todo):
             parts.append(
                 pd.DataFrame(
                     rows, columns=["trade_id", "created_time", "yes_price", "count", "taker_side"]
@@ -201,6 +218,7 @@ def fetch_series(
                 "close_window_hours": close_window,
                 "occurrence_window_hours": occurrence_window,
                 "sample": sample,
+                "historical": historical,
                 "markets_with_trades": len(eligible),
                 "fetched_at": dt.datetime.now(dt.UTC).isoformat(),
             },
@@ -230,6 +248,9 @@ def main():
     ap.add_argument("--close-window", help="A,B: only trades A..B hours before close (A may be '')")
     ap.add_argument("--occurrence-window", help="A,B: only trades A..B hours before occurrence")
     ap.add_argument("--sample", type=int, help="random markets per series (outcome-blind)")
+    ap.add_argument(
+        "--historical", action="store_true", help="markets settled before Kalshi's cutoff"
+    )
     a = ap.parse_args()
     ts = [
         int(dt.datetime.fromisoformat(f"{d}T00:00:00+00:00").timestamp()) for d in (a.start, a.end)
@@ -248,6 +269,7 @@ def main():
             pair(a.close_window),
             pair(a.occurrence_window),
             a.sample,
+            a.historical,
         )
 
 

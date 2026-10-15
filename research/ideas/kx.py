@@ -29,10 +29,10 @@ def available():
     return sorted(p.name for p in RAW.iterdir() if (p / "trades.parquet").exists())
 
 
-def load(series_list, trades=True):
+def load(series_list, trades=True, root=RAW):
     ms, ts = [], []
     for s in series_list:
-        d = RAW / s
+        d = root / s
         if not (d / "markets.parquet").exists():
             continue
         m = pd.read_parquet(d / "markets.parquet")

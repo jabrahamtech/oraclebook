@@ -76,3 +76,6 @@ python -I kx_flow.py crypto holdout --k 0.2 --min-dollars 100 --alpha 0.016667
 ```
 (The full series lists and fetch windows are in PROTOCOL_V2.md amendments and each
 `raw/kalshi_api/<series>/_source.json`.)
+
+Later rounds: [RESULTS_V3.md](RESULTS_V3.md) (weather after the observations, forecasts, live
+structural checks) and [RESULTS_MACRO.md](RESULTS_MACRO.md) (macro nowcasts vs Kalshi).
