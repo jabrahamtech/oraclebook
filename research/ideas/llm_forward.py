@@ -110,8 +110,14 @@ def curl_json(url, body=None, auth=None, timeout=120):
 
 
 def parse(text):
-    """The last number in [0, 1] in the reply (a trailing % divides by 100)."""
-    for v, pct in reversed(re.findall(r"(?<![\d.])(\d*\.?\d+)\s*(%?)", text or "")):
+    """The last number in [0, 1] in the reply (a trailing % divides by 100). Inline reasoning
+    (<think>…</think>, from models whose template Ollama cannot split) is dropped; a reply cut off
+    mid-reasoning counts as no answer."""
+    text = text or ""
+    if "<think>" in text and "</think>" not in text:
+        return np.nan
+    text = text.rsplit("</think>", 1)[-1]
+    for v, pct in reversed(re.findall(r"(?<![\d.])(\d*\.?\d+)\s*(%?)", text)):
         x = float(v) / (100 if pct else 1)
         if 0 <= x <= 1:
             return x
@@ -134,9 +140,14 @@ def ask(question, rules, close, prior, think):
             "messages": msgs,
             "stream": False,
             "think": think,
-            "options": {"temperature": 0, "num_predict": budget, "num_ctx": 8192},
+            "options": {"temperature": 0, "num_predict": budget, "num_ctx": budget + 4096},
         }
         d = curl_json(base + "/api/chat", body, timeout=900)
+        if "error" in d and "think" in str(d["error"]).lower():
+            # Ollama rejects `think` for models it cannot detect as reasoning models; they then
+            # reason inline, which parse() strips.
+            del body["think"]
+            d = curl_json(base + "/api/chat", body, timeout=900)
         return parse((d.get("message") or {}).get("content"))
     body = {"model": model, "messages": msgs, "temperature": 0, "max_tokens": budget}
     d = curl_json(base + "/chat/completions", body, os.environ.get("LLM_API_KEY"), timeout=900)
