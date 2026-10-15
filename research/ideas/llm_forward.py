@@ -201,6 +201,12 @@ def log(out, markets, priors, think):
     path = pathlib.Path(out)
     path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists()
+    # Reruns skip (model, reasoning budget, prior) forecasts already logged for a market.
+    done = set()
+    if not new:
+        old = pd.read_csv(path, dtype=str)
+        done = set(zip(old.model, old.think, old.prior, old.ticker, strict=True))
+    model = os.environ["LLM_MODEL"]
     with open(path, "a", newline="") as f:
         w = csv.writer(f)
         if new:
@@ -210,7 +216,10 @@ def log(out, markets, priors, think):
             question = m.get("title", "") + (
                 f" — {m['yes_sub_title']}" if m.get("yes_sub_title") else ""
             )
+            p = None
             for prior in priors:
+                if (model, str(think), str(prior), m["ticker"]) in done:
+                    continue
                 t0 = time.time()
                 p = ask(
                     question,
@@ -222,7 +231,7 @@ def log(out, markets, priors, think):
                 w.writerow(
                     [
                         datetime.now(UTC).isoformat(timespec="seconds"),
-                        os.environ["LLM_MODEL"],
+                        model,
                         think,
                         prior,
                         m["ticker"],
@@ -235,7 +244,10 @@ def log(out, markets, priors, think):
                     ]
                 )
                 f.flush()
-            print(f"{i}/{len(markets)} {m['ticker']} mid {(bid + ask_) / 2:.2f} → {p}", flush=True)
+            if p is not None:
+                print(
+                    f"{i}/{len(markets)} {m['ticker']} mid {(bid + ask_) / 2:.2f} → {p}", flush=True
+                )
 
 
 def takers(g, edge):
