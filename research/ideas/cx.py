@@ -98,7 +98,9 @@ def fetch(start, end):
         trades = [pd.read_parquet(tp)] if tp.exists() else []
         todo = [d for d in days if f"KX{asset}D-{d.strftime('%y%b%d').upper()}17" not in have]
         with ThreadPoolExecutor(max_workers=4) as ex:
-            for i, (meta, tr) in enumerate(ex.map(lambda d, a=asset, p=px: fetch_event(a, d, p, lim), todo)):
+            for i, (meta, tr) in enumerate(
+                ex.map(lambda d, a=asset, p=px: fetch_event(a, d, p, lim), todo)
+            ):
                 if meta is not None:
                     metas.append(meta)
                 if tr is not None:
