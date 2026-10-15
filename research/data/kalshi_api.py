@@ -135,11 +135,17 @@ def trades(ticker, limiter, min_ts=None, max_ts=None, historical=False):
 def window(m, close_window, occurrence_window):
     """Per-market (min_ts, max_ts) in unix seconds (None = unbounded). close_window (A, B): trades
     from A to B hours before close; occurrence_window (A, B): the same relative to
-    occurrence_datetime (close_time when missing). A may be None (no lower bound)."""
-    close = pd.to_datetime(m.close_time, utc=True, format="ISO8601")
-    occ = pd.to_datetime(m.get("occurrence_datetime"), utc=True, format="ISO8601", errors="coerce")
+    occurrence_datetime (else expected_expiration_time, which older markets carry instead, else
+    close_time). A may be None (no lower bound)."""
+
+    def ts(col):
+        v = m[col] if col in m else pd.Series(None, index=m.index, dtype=object)
+        return pd.to_datetime(v, utc=True, format="ISO8601", errors="coerce")
+
+    close = ts("close_time")
+    occ = ts("occurrence_datetime").fillna(ts("expected_expiration_time")).fillna(close)
     lo = hi = pd.Series([None] * len(m), index=m.index, dtype=object)
-    for spec, ref in ((close_window, close), (occurrence_window, occ.fillna(close))):
+    for spec, ref in ((close_window, close), (occurrence_window, occ)):
         if spec is None:
             continue
         a, b = spec

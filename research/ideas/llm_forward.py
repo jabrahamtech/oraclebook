@@ -11,7 +11,7 @@ Configuration from the environment only (never written to disk or printed):
   LLM_API_KEY   optional bearer token (OpenRouter); local runtimes need none
 
 Usage: python -I llm_forward.py log <out.csv> --series KXCPI,KXGDP,... [--prior 0|1|both]
-       python -I llm_forward.py log <out.csv> --closing-days 4 [--max N] [--think]
+       python -I llm_forward.py log <out.csv> --closing-days 4 [--max N] [--think [TOKENS]]
        python -I llm_forward.py score <out.csv>
 --closing-days samples one market per event (the one priced nearest 50/50) among two-sided
 markets closing within that many days, skipping price-ladder series a model without live data
@@ -133,13 +133,13 @@ def ask(question, rules, close, prior, think):
         + "Probability of YES:"
     )
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
-    budget = 8192 if think else 32
+    budget = think or 32
     if os.environ.get("LLM_API") == "ollama":
         body = {
             "model": model,
             "messages": msgs,
             "stream": False,
-            "think": think,
+            "think": think > 0,
             "options": {"temperature": 0, "num_predict": budget, "num_ctx": budget + 4096},
         }
         d = curl_json(base + "/api/chat", body, timeout=900)
@@ -223,7 +223,7 @@ def log(out, markets, priors, think):
                     [
                         datetime.now(UTC).isoformat(timespec="seconds"),
                         os.environ["LLM_MODEL"],
-                        int(think),
+                        think,
                         prior,
                         m["ticker"],
                         m["event_ticker"],
@@ -289,7 +289,9 @@ def main():
     ap.add_argument("--closing-days", type=float)
     ap.add_argument("--min-volume", type=float, default=100)
     ap.add_argument("--prior", choices=["0", "1", "both"], default="both")
-    ap.add_argument("--think", action="store_true")
+    ap.add_argument(
+        "--think", type=int, nargs="?", const=8192, default=0, help="reasoning budget (tokens)"
+    )
     ap.add_argument("--max", type=int, default=200)
     ap.add_argument("--seed", type=int, default=kx.SEED)
     a = ap.parse_args()
