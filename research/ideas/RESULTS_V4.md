@@ -26,7 +26,8 @@ holdouts: [CANDIDATES_V4.md](CANDIDATES_V4.md), judged at α = 0.05 / 4. Data: K
    contain the outcomes. `llm_forward.py` logs live forecasts on open Kalshi markets next to the
    bid / ask and scores them after settlement; it needs `LLM_BASE_URL` + `LLM_MODEL` (+
    `LLM_API_KEY` for OpenRouter-hosted models such as Jev, or a local Ollama / LM Studio
-   endpoint, which this sandbox blocks). Not run.
+   endpoint). Run later on a home NAS: see [RESULTS_LLM.md](RESULTS_LLM.md) — every model
+   scored worse than the market.
 
 Four rounds, the same pattern: rules that look significant and grow with the edge threshold in
 exploration (S1 order flow, K1, F15, G1) vanish on the holdout. Kalshi's crypto ladders price the
