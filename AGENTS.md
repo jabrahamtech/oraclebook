@@ -11,7 +11,7 @@ via adapters). If you are an agent: read this, then [NAMING.md](NAMING.md) and
 The framework is **five concepts** — a `Feed` streams events onto the `Bus`; a `Strategy` turns
 them into orders; `Gate`s vet the orders; an `Executor` places them (paper or live); `Fill`s
 update the `Book` and `Ledger`; and `Replay` re-runs the recorded **feed** for backtesting
-(reproducible for a single feed; paper fills; cross-topic interleaving best-effort). A `Venue` bundles a venue's Feed + Executor + settlement + fees. See the diagram in
+(deterministic; conservative trade-through paper fills; settle with `App.resolve`). A `Venue` bundles a venue's Feed + Executor + settlement + fees. See the diagram in
 [NAMING.md](NAMING.md).
 
 ## House rules for agents

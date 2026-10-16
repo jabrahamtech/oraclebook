@@ -33,14 +33,19 @@ def _jsonable(obj: Any) -> Any:
 
 
 class Ledger:
-    """Append-only JSONL event log. One file, one event per line."""
+    """Append-only JSONL event log. One file, one event per line.
 
-    def __init__(self, path: str = "events.jsonl") -> None:
+    `mode="a"` (default) appends — right for a live account's durable record. Pass `mode="w"`
+    for a backtest, so re-running into the same path doesn't double-count earlier runs."""
+
+    def __init__(self, path: str = "events.jsonl", mode: str = "a") -> None:
+        if mode not in ("a", "w"):
+            raise ValueError(f"mode must be 'a' or 'w', got {mode!r}")
         self.path = path
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        self._fh = open(path, "a", encoding="utf-8")
+        self._fh = open(path, mode, encoding="utf-8")  # noqa: SIM115 — held for the run
 
     def record(self, topic: str, obj: Any, ts: float | None = None) -> None:
         """Append one event: {topic, ts, payload}."""

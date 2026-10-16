@@ -5,6 +5,10 @@ the `Venue` protocol. Discovery, fees, and the feed are credential-free (public 
 APIs), so paper trading, recording, and Replay work against real Polymarket data out of the
 box. Live execution (`PolymarketExecutor`, via py-clob-client) reads credentials from env and
 is ⚠️ experimental — validate in paper + Replay before risking real money.
+
+Fees: Polymarket charges taker fees in most categories, with per-market parameters from
+Gamma's `feeSchedule`. `fee()` has no market context, so it uses the crypto up/down default
+this venue discovers; use `fees.fee_for_market` when the `Market` is at hand.
 """
 from __future__ import annotations
 
@@ -26,6 +30,8 @@ class PolymarketVenue:
     def __init__(self, assets: list[str], intervals: list[int]) -> None:
         self._assets = [a.upper() for a in assets]
         self._intervals = list(intervals)
+        self._markets: list[Market] = []
+        self._executor = None
 
     def feed(self, bus: Bus) -> Feed:
         return PolymarketFeed(bus, self._assets, self._intervals)
@@ -35,10 +41,14 @@ class PolymarketVenue:
         # ⚠️ Live trading risks real money — validate in paper + Replay first.
         from oraclebook.adapters.polymarket.executor import PolymarketExecutor
 
-        return PolymarketExecutor()
+        self._executor = PolymarketExecutor(markets=self._markets)
+        return self._executor
 
     async def current_markets(self) -> list[Market]:
-        return await asyncio.to_thread(discover, self._assets, self._intervals)
+        self._markets = await asyncio.to_thread(discover, self._assets, self._intervals)
+        if self._executor is not None:
+            self._executor.update_markets(self._markets)
+        return self._markets
 
     def fee(self, price: float, size: float, is_maker: bool) -> float:
         return fee_amount(price, size, is_maker=is_maker)

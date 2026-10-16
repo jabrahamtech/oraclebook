@@ -56,3 +56,5 @@ packages = ["oraclebook"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Downloaded third-party research data, never ours to lint.
+extend-exclude = ["research/data/raw"]

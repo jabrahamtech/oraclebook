@@ -15,8 +15,10 @@ websocket client.
 `replay` imports a strategy class from a dotted `module:ClassName` path (there is no
 strategy-name registry — the dotted path is the honest, unambiguous interface),
 instantiates it with no constructor args, and runs `oraclebook.replay.run_replay` against
-the recording(s) under `--from`. `--report` prints a compact fill/PnL summary read back
-from the finished App's Ledger.
+the recording(s) under `--from`. `--report` prints totals plus a per-market table
+(fills, notional, fees, 1/10/60s markouts against the recording's own mids via
+`oraclebook.analysis`) read back from the finished App's Ledger — numbers only, not a
+profitability claim.
 """
 from __future__ import annotations
 
@@ -102,7 +104,7 @@ def _build_parser() -> argparse.ArgumentParser:
     replay.add_argument(
         "--report",
         action="store_true",
-        help="Print a compact fill-count / PnL summary after replay.",
+        help="Print totals plus per-market fills, notional, fees and 1/10/60s markouts.",
     )
 
     return parser
@@ -193,37 +195,76 @@ async def _run_record(args: argparse.Namespace) -> int:
     return 0
 
 
+_REPORT_HORIZONS = (1.0, 10.0, 60.0)
+
+
+def _fmt(value: float | None, spec: str) -> str:
+    return "n/a" if value is None else format(value, spec)
+
+
+def _print_report(args: argparse.Namespace, n_recordings: int, fill_markouts: list) -> None:
+    """Deterministic replay report: totals, then per-market fills / notional / fees / markouts."""
+    from oraclebook.analysis import summarize
+
+    by_market = summarize(fill_markouts, by="market_id")
+    print("Replay report")
+    print(f"  strategy:   {args.strategy}")
+    print(f"  recordings: {n_recordings}")
+    print(f"  fills:      {len(fill_markouts)}")
+    print(f"  notional:   {sum(m.notional for m in fill_markouts):.2f}")
+    print(f"  fees:       {sum(m.fee for m in fill_markouts):.4f}")
+    print()
+    print("Per market (markouts: size-weighted mean, per share, signed; n/a = no mid at horizon)")
+    mo_headers = "".join(f"{'mo_' + format(h, 'g') + 's':>10}" for h in _REPORT_HORIZONS)
+    print(f"  {'market':<24}{'fills':>7}{'notional':>12}{'fees':>10}{mo_headers}{'pnl_res':>11}")
+    for market_id, summary in by_market.items():
+        mo_cells = "".join(
+            f"{_fmt(summary.mean_markout.get(h), '+.4f'):>10}" for h in _REPORT_HORIZONS
+        )
+        print(
+            f"  {market_id:<24}{summary.count:>7}{summary.notional:>12.2f}{summary.fees:>10.4f}"
+            f"{mo_cells}{_fmt(summary.pnl_to_resolution, '+.2f'):>11}"
+        )
+    print("pnl_res = $ PnL to settlement net of fees (n/a unless every fill's market resolved)")
+    print("numbers only — not a profitability claim")
+
+
 async def _run_replay(args: argparse.Namespace) -> int:
+    from oraclebook.analysis import markouts, mid_series_from_recording
     from oraclebook.core.ledger import Ledger
     from oraclebook.replay import run_replay
 
     strategy_cls = _import_strategy(args.strategy)
     recording_paths = _resolve_recording_paths(args.from_path)
 
-    total_fills = 0
-    total_fees = 0.0
-    total_notional = 0.0
+    fill_markouts = []
     for path in recording_paths:
         strategy = strategy_cls()
         app = await run_replay(path, strategy)
         ledger = app.ledger
         if not isinstance(ledger, Ledger):
             continue  # run_replay always wires a concrete Ledger; narrow for the type checker
-        for rec in ledger.fills():
-            payload = rec["payload"]
-            total_fills += 1
-            total_fees += payload.get("fee", 0.0)
-            total_notional += payload.get("price", 0.0) * payload.get("size", 0.0)
+        settlements = {
+            rec["payload"]["token_id"]: rec["payload"]["settlement_value"]
+            for rec in ledger.resolutions()
+        }
+        # Mids come from the same recording the fills were replayed against.
+        fill_markouts.extend(
+            markouts(
+                ledger.fills(),
+                mid_series_from_recording(path),
+                horizons=_REPORT_HORIZONS,
+                settlements=settlements,
+            )
+        )
 
     if args.report:
-        print("Replay report")
-        print(f"  strategy:   {args.strategy}")
-        print(f"  recordings: {len(recording_paths)}")
-        print(f"  fills:      {total_fills}")
-        print(f"  notional:   {total_notional:.2f}")
-        print(f"  fees:       {total_fees:.4f}")
+        _print_report(args, len(recording_paths), fill_markouts)
     else:
-        print(f"Replay complete: {total_fills} fills across {len(recording_paths)} recording(s)")
+        print(
+            f"Replay complete: {len(fill_markouts)} fills across "
+            f"{len(recording_paths)} recording(s)"
+        )
 
     return 0
 

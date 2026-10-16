@@ -1,19 +1,23 @@
 """ReplayFeed — re-publish a recording onto the bus in order, on a virtual clock.
 
 Reads a JSONL recording, reconstructs each event, advances the `ReplayClock` to the
-event's recorded timestamp, and publishes it — so a strategy re-runs against the exact
-recorded order books, reproducibly for a single feed (cross-topic interleaving is
-best-effort; fills are simulated by the paper executor). Implements the `Feed` protocol,
-so the App drives it like any live feed (with `replay=True` so nothing is coalesced or dropped).
+event's recorded timestamp, and publishes it. With an App in replay mode, handlers run
+inline on publish, so each event is fully processed (strategy, gates, simulated fills)
+before the clock moves to the next one — deterministic and free of lookahead across topics.
+Implements the `Feed` protocol, so the App drives it like any live feed.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 
+import structlog
+
 from oraclebook.core.bus import Bus
 from oraclebook.core.clock import ReplayClock
 from oraclebook.core.events import BookUpdate, IntervalBoundary, PriceTick
+
+logger = structlog.get_logger()
 
 # Map recorded type names back to event classes.
 _TYPES = {
@@ -21,6 +25,32 @@ _TYPES = {
     "PriceTick": PriceTick,
     "IntervalBoundary": IntervalBoundary,
 }
+
+
+def _restore(cls: type, payload: dict):
+    """Rebuild a frozen event, turning JSON lists back into the tuples it was recorded with."""
+    fields = {
+        k: tuple(tuple(x) if isinstance(x, list) else x for x in v) if isinstance(v, list) else v
+        for k, v in payload.items()
+    }
+    return cls(**fields)
+
+
+def load_recording(path: str) -> list[dict]:
+    """Read a recording in (seq) order. A malformed line — typically the partial last line of
+    a recording cut off by a crash — is skipped with a warning rather than aborting."""
+    records: list[dict] = []
+    with open(path, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                logger.warning("replay.bad_line_skipped", path=path, line=lineno)
+    records.sort(key=lambda r: r["seq"])
+    return records
 
 
 class ReplayFeed:
@@ -32,6 +62,7 @@ class ReplayFeed:
         self._path = path
         self._task: asyncio.Task | None = None
         self._done = asyncio.Event()
+        self._error: BaseException | None = None
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run())
@@ -41,22 +72,22 @@ class ReplayFeed:
             self._task.cancel()
 
     async def wait_done(self) -> None:
-        """Await until every recorded event has been published."""
+        """Await until every recorded event has been published and handled; re-raises a
+        failure in the replay loop instead of hanging."""
         await self._done.wait()
+        if self._error is not None:
+            raise self._error
 
     async def _run(self) -> None:
-        records: list[dict] = []
-        with open(self._path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    records.append(json.loads(line))
-        records.sort(key=lambda r: r["seq"])
-        for rec in records:
-            cls = _TYPES.get(rec["type"])
-            if cls is None:
-                continue
-            self._clock.advance_to(rec["ts"])
-            await self._bus.publish(rec["topic"], cls(**rec["payload"]))
-            await asyncio.sleep(0)  # yield so consumers process before the next tick
-        self._done.set()
+        try:
+            for rec in load_recording(self._path):
+                cls = _TYPES.get(rec["type"])
+                if cls is None:
+                    continue
+                self._clock.advance_to(rec["ts"])
+                await self._bus.publish(rec["topic"], _restore(cls, rec["payload"]))
+                await asyncio.sleep(0)
+        except Exception as exc:  # noqa: BLE001 — re-raised from wait_done()
+            self._error = exc
+        finally:
+            self._done.set()
