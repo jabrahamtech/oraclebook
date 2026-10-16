@@ -59,7 +59,8 @@ def analyse(books, sizes):
     # Queue at 99¢ on the winning side: YES bid of 0.99, or NO bid of 0.99 (= YES ask of 0.01).
     yes = (b.win == "yes") & (b.yes_bid_dollars >= 0.985)
     no = (b.win == "no") & (b.yes_ask_dollars <= 0.015)
-    b = b[yes | no].assign(queue=np.where(yes[yes | no], b.yes_bid_size_fp, b.yes_ask_size_fp))
+    b, yes = b[yes | no], yes[yes | no]
+    b = b.assign(queue=np.where(yes, b.yes_bid_size_fp, b.yes_ask_size_fp))
     # Contracts sold into the winning side's 99¢ bid: the taker bought the losing side at 1¢.
     t = t.assign(win=t.ticker.map(r)).dropna(subset=["win"])
     p_lose = np.where(t.win == "yes", 1 - t.yes_price, t.yes_price)
@@ -70,7 +71,10 @@ def analyse(books, sizes):
         cum = tt["count"].cumsum().to_numpy()
         total = cum[-1] if len(cum) else 0.0
         before = np.searchsorted(tt.ts.to_numpy(), g.ts.to_numpy(), side="right")
-        sold_before = np.where(before > 0, cum[np.maximum(before - 1, 0)], 0.0)
+        if len(cum):
+            sold_before = np.where(before > 0, cum[np.maximum(before - 1, 0)], 0.0)
+        else:
+            sold_before = np.zeros(len(g))
         after = total - sold_before
         for q in sizes:
             filled = np.clip(after - g["queue"].to_numpy(), 0, q)

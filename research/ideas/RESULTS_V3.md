@@ -17,8 +17,10 @@ Models guidance from the Iowa Environmental Mesonet; live Kalshi books sampled 2
    on daily highs (M1, holdout +1.01%, 297 city-days) and on daily lows (L1, holdout +1.03%, 187
    city-days). Both pass their holdouts, but they measure the existing queue. In the evening that
    queue (~12.7k contracts, median) is ~25× what later trades into it, so a newcomer joining late
-   is not filled. Whether one joining at the moment of decision would be is being measured
-   (`kx_live_wx.py` + `wx_queue.py`, after the sampled markets settle).
+   is not filled. Measured on 16 hours of live books (2026-10-14/15, 218 decided markets): a
+   newcomer joining the 99¢ queue at a random sampled minute is filled 1.1% of the time; even at
+   the first minute the queue was seen, 5.5% — about $8 gross over all 218 markets for a
+   100-contract order ($48 for 1,000). The queue ahead had a median of 11,015 contracts.
 3. **No structural arbitrage that pays.** Bracket sums and strike ladders across ~14.5k open
    events: none positive after fees. Hourly vs 15-minute crypto (identical settlement number):
    live order books showed a genuine crossing (+4¢ gross, +0.7¢ net after both taker fees, 538
@@ -36,7 +38,7 @@ Models guidance from the Iowa Environmental Mesonet; live Kalshi books sampled 2
 | H5: the same on the day before (thinner market?) | 20 cities, 470k prints | Dead. Brier market 0.162, NBM 0.191, blend 0.169; taker rules −4% to −10%. The market is ahead of the public forecast a day out as well. |
 | M1: makers buying decided contracts at 99¢ (daily highs) | pm tape, 20 cities | Frozen; holdout **+1.01% [+1.01, +1.01]**, 297 city-days, no losses (exploration the same, 645 city-days). Population only: ≈ $37.5 per city-day to the whole 99¢ queue. |
 | L1: the same on daily lows (replication) | full-day tape, 20 cities | Frozen after M1; holdout **+1.03% [+1.01, +1.07]**, 187 city-days, no losses; ≈ $7 per city-day. The 6-hour minimum groups had to be dropped (one corrupt group, 8 °F below every reading of the day, would have decided a contract wrongly). |
-| Queue for a newcomer at 99¢ | live books, 2026-10-14 evening | Median ~12.7k contracts already queued at 99¢ on decided markets vs median ~470 sold into 99¢ bids per market after 8 pm historically: a late joiner is not filled. Decision-time queue build-up: pending (wx_queue.py on the 24-hour sample). |
+| Queue for a newcomer at 99¢ | live books, 2026-10-14 evening | Median ~12.7k contracts already queued at 99¢ on decided markets vs median ~470 sold into 99¢ bids per market after 8 pm historically: a late joiner is not filled. Joining at the first sampled minute: filled 5.5% of the time, ≈ $8 gross over 218 markets for a 100-contract order (wx_queue.py, 16-hour sample). |
 | Live bracket sums (sell every YES above $1 / buy every YES below $1) | 14.5k open events per pass, 29 passes | `sell_all`: crossed sets exist (≈ 35 per pass, 1,021 in all) but none positive after fees (best −0.15¢). `buy_all` hits are all non-exhaustive candidate lists (primaries, "who will…" sets). |
 | Live strike ladders | same (29 passes, 2026-10-14 23:58 → 10-15 02:05 UTC) | No tradeable violation: 7 positive-after-fee hits in 29 passes, all with ≤ 0.01 contracts displayed (dust; NBA totals, USD/SEK). Same-strike markets that differ by date or city are excluded. |
 | Hourly vs 15-minute crypto (same settlement number) | history: 182 sampled hours, prints | Prints cross the riskless bound within 1 s in ~45% of hours (BTC 1¢, ETH 3¢ mean net), concentrated where the two contracts are near-identical and in the last minutes — consistent with one book repricing faster than the other, i.e. a latency race, not resting arbitrage. |
