@@ -188,3 +188,14 @@ less than the drift.
 **Split.** 60/40 by time (B2: by event close), as for P1–P4.
 
 **Holdout α = 0.05 / 7** for P1–P4 and B1–B3, replacing 0.05 / 5 (no data had been seen).
+
+## Amendment 2 (2026-10-18, before any data): B1/B2 prices
+
+data-api returns a market's tape newest-first and stops paginating at a depth cap, so busy
+hourly and monthly markets would lose exactly the opening trades B1 and B2 need. B1 and B2
+therefore price entries from CLOB `prices-history` instead:
+- B1: the last point at or before the decision time, at most 2 min old, at 1-minute fidelity.
+- B2: the last YES point in the previous 24 h, at hourly fidelity; the NO price is 1 − YES.
+
+Either way, the entry pays that price + 1¢ (spread allowance) + the 0.07·p·(1−p) fee. P3 keeps
+the tape, which only it needs.

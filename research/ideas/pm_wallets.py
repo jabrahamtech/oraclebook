@@ -8,8 +8,8 @@ from resampling wallets. Rule P3(t*): copy the first trade per market (>= 10 s b
 of every wallet with t >= t* in the scoring window, filled at the next taker BUY of the same side
 by another wallet within 5 s (a strictly later second), 0.07 fee, held to resolution.
 
-Data: research/data/polymarket_api.py <raw> --assets BTC,ETH --minutes 5 --start 2026-09-24
-      --end 2026-10-15
+Data: research/data/polymarket_api.py <raw> updown --assets BTC,ETH --interval 5m
+      --start 2026-09-24 --end 2026-10-15 --trades
 
 Usage: python -I pm_wallets.py explore
        python -I pm_wallets.py holdout --t-star T --alpha 0.01   (frozen rule, run once)
@@ -130,15 +130,21 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.05)
     a = ap.parse_args()
     t, cut = load()
-    print(f"{t.condition_id.nunique():,} markets, {len(t):,} taker trades, "
-          f"{t.wallet.nunique():,} wallets; holdout from {cut}")
+    print(f"P3: {t.condition_id.nunique():,} markets, {len(t):,} trades, "
+          f"{t.wallet.nunique():,} wallets; holdout from {cut:%Y-%m-%d}")
     xa, xb, ho = (t[t.window == w] for w in ("explore_a", "explore_b", "holdout"))
     if a.mode == "explore":
-        print("persistence of wallet edge, first vs second half of exploration:")
-        print(persistence(xa, xb))
-        rows = [{"t_star": ts, **report(copies(xa, xb, ts))} for ts in T_STARS]
-        print("\nrule grid (score on exploration half 1, copy on half 2; 0.07 fee, held)")
-        print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+        p = persistence(xa, xb)
+        if "spearman" in p:
+            print(f"P3 persistence: {p['wallets']} wallets, Spearman {p['spearman']:+.3f} "
+                  f"[{p['lo']:+.3f}, {p['hi']:+.3f}]; t>=2 wallets {p['t>=2_wallets']}, "
+                  f"next-half edge {p['t>=2_mean_edge_next']:+.4f}")
+        else:
+            print(f"P3 persistence: only {p['wallets']} wallets eligible in both halves")
+        for ts in T_STARS:
+            r = report(copies(xa, xb, ts))
+            day = f" (day CI [{r['day_lo']:+.2%}, {r['day_hi']:+.2%}])" if r.get("n") else ""
+            print(f"    t*>={ts}: {C.fmt(r)}{day}")
         return
     x = copies(pd.concat([xa, xb]), ho, a.t_star)
     r = report(x, alpha=a.alpha)

@@ -127,25 +127,20 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.05)
     a = ap.parse_args()
     if a.mode == "holdout":
-        d, books, cut = panel(a.lookback)
+        d, books, _cut = panel(a.lookback)
         t = trades(d[d.split == "holdout"], books, a.move)
         print(
             f"HOLDOUT L={a.lookback}s move>={a.move} alpha={a.alpha}: "
             f"{C.fmt(C.summarise(t, alpha=a.alpha))}"
         )
         return
-    rows, gains = [], []
     for lb in LOOKBACKS:
-        d, books, cut = panel(lb)
+        d, books, _cut = panel(lb)
         e = d[d.split == "explore"]
+        gain = ", ".join(f"h={r.h_s}s {r.gain:+.4f}" for r in info(d).itertuples())
+        print(f"P2 L={lb}s log-loss gain from BTC move: {gain or 'n/a'}")
         for move in MOVES:
-            rows.append({"lookback_s": lb, "move": move, **C.summarise(trades(e, books, move))})
-        gains.append(info(d).assign(lookback_s=lb))
-    print(f"kachoio alts vs BTC, split at close {cut}")
-    print("does BTC's recent move add information to the alt's price? (gain > 0 = yes)")
-    print(pd.concat(gains).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
-    print("\nrule grid (exploration, buy the alt in BTC's direction, 0.07 fee, held)")
-    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+            print(f"    move>={move}: {C.fmt(C.summarise(trades(e, books, move)))}")
 
 
 if __name__ == "__main__":

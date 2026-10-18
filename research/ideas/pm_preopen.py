@@ -67,19 +67,15 @@ def trades(d, lean):
 def explore(d):
     e = d[d.split == "explore"]
     usable = e.groupby("horizon").mkey.nunique()
-    print("exploration markets with a usable pre-open Up quote (spread <= 5c, <= 5 s old):")
-    print(usable.to_string())
+    print("P1 usable pre-open quotes: " + ", ".join(f"{h} {n}" for h, n in usable.items()))
     if usable.max() < MIN_MARKETS:
-        print(f"fewer than {MIN_MARKETS} markets at every tau: P1 is not testable on kachoio")
+        print(f"P1 not testable: < {MIN_MARKETS} markets at every tau")
         return
-    print("\npre-open Up mid, quantiles by tau:")
-    print(e.groupby("horizon").mid.quantile([0.01, 0.1, 0.5, 0.9, 0.99]).unstack().round(4))
-    rows = []
     for h, g in e.groupby("horizon"):
+        q = g.mid.quantile([0.01, 0.5, 0.99]).round(3).tolist()
+        print(f"  tau={h} mid p1/p50/p99 {q}")
         for lean in LEANS:
-            rows.append({"tau": h, "lean": lean, **C.summarise(trades(g, lean))})
-    print("\nrule grid (exploration, buy the side below 0.5 at its ask, 0.07 fee, held)")
-    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+            print(f"    lean>={lean}: {C.fmt(C.summarise(trades(g, lean)))}")
 
 
 def main():

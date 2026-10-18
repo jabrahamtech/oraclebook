@@ -88,8 +88,10 @@ def episodes(c):
                     & (c.ts - c.ts.shift() <= TD("2s")))
     run = new.cumsum().where(under)
     d = c[under].groupby(run[under]).ts.agg(lambda s: (s.max() - s.min()).total_seconds() + 1)
-    return {"seconds": len(c), "share_under_1": under.mean(), "episodes": len(d),
-            "median_s": d.median() if len(d) else np.nan, "max_s": d.max() if len(d) else np.nan}
+    if not len(d):
+        return f"{len(c):,} s quoted, none under $1"
+    return (f"{len(c):,} s quoted, {under.mean():.2%} under $1, {len(d)} episodes "
+            f"(median {d.median():.0f} s, max {d.max():.0f} s)")
 
 
 def trades(p, q, c, edge):
@@ -119,16 +121,15 @@ def main():
     m, cut = C.markets("polyorderbooks")
     p = legs(pairs(m))
     q = book(m)
-    print(f"polyorderbooks: {len(p)} nested pairs with strike gap >= 3 bp; split at close {cut}")
+    print(f"P4: {len(p)} nested pairs (strike gap >= 3 bp), split {cut:%Y-%m-%d}")
     split = "explore" if a.mode == "explore" else "holdout"
     ps = p[p.split_l == split]
     c = costs(ps, q)
     if a.mode == "explore":
         for (ll, ls), g in ps.groupby(["length_l", "length_s"]):
-            print(f"{ll} vs last {ls}: {len(g)} pairs, {episodes(c[c.pair.isin(g.index)])}")
-        rows = [{"edge": e, **C.summarise(trades(ps, q, c, e))} for e in EDGES]
-        print("\nrule grid (exploration, buy both legs at the next asks, both taker fees, held)")
-        print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+            print(f"  {ll} vs last {ls}: {len(g)} pairs, {episodes(c[c.pair.isin(g.index)])}")
+        for e in EDGES:
+            print(f"    cost<=1-{e}: {C.fmt(C.summarise(trades(ps, q, c, e)))}")
         return
     print(f"HOLDOUT edge={a.edge} alpha={a.alpha}: "
           f"{C.fmt(C.summarise(trades(ps, q, c, a.edge), alpha=a.alpha))}")
