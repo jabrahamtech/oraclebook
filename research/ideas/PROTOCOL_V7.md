@@ -136,3 +136,62 @@ trade, and every account's fills are public. Steps 1–4 above apply with these 
     wallets, are judged.
   - A 10,000-fill cap truncates high-frequency accounts.
   - Inferring discretionary traders' rules from fills may find no stable rule ("other").
+
+## Amendment 2 (2026-10-19, before any wallet's fills were fetched): implementation choices
+
+The live calls made to check formats showed the following:
+- `candleSnapshot` serves only each coin's latest 5,000 candles; 1h data starts 2026-03-24, and a
+  2024 request returns `[]`.
+- `userFillsByTime` returns at most 2,000 fills per call, oldest first.
+- HIP-3 coins (e.g. `xyz:NVDA`) have their own candles and funding.
+
+Fixed now:
+
+- **Dates.** Run date 2026-10-19. Window [2026-07-21, 2026-10-19) UTC. Exploration is the
+  first 54 days, [2026-07-21, 2026-09-13); the holdout is [2026-09-13, 2026-10-19).
+  The backtest runs from 2024-01-01 to 2026-07-21.
+- **Candles.**
+  - Fingerprints and the holdout use Hyperliquid 1h candles.
+  - The backtest uses Binance USDⓈ-M 1h klines (data.binance.vision), because Hyperliquid's do not
+    reach back. Signals are in σ units, so the two sources are comparable.
+  - Funding is always Hyperliquid's `fundingHistory`.
+  - A coin with no Binance USDⓈ-M perp, or no Hyperliquid funding at the time, is left out of the
+    backtest for that time.
+- **Wallet definitions.** These use perp fills only.
+  - **Closed trade:** a round trip per coin, from flat (`startPosition` = 0) back to flat, or to a
+    flip, which closes one trip and opens the next.
+  - **Exploration PnL:** Σ `closedPnl` − Σ `fee`; funding is excluded, as Amendment 1 says.
+  - **Active day:** a UTC day with at least one fill.
+  - **Maker share:** the share of fills with `crossed` = false.
+  - **Vault:** `userRole` returns "vault".
+  - **Account value:** the leaderboard's.
+- **Truncation.** A wallet whose fills since the window start reach the 10,000 cap has lost its
+  oldest fills. It is reported but cannot be selected, because its exploration record is
+  incomplete.
+- **Signals.**
+  - σ is the standard deviation of 1h log returns over the trailing 720 hours, with at least 360.
+  - At time t the moves are r4 and r24, the log returns over the 4 and 24 one-hour candles
+    closed by t. Then z4 = r4 / (2σ) and z24 = r24 / (√24·σ).
+  - Funding at t is the last settled hourly rate; its APR is the rate × 8,760.
+  - For a wallet these are measured at each round trip's opening fill.
+- **Archetype precedence:** market maker first, then trend, fade, funding-contrarian, other. A
+  market maker's fills are inventory management, not direction.
+- **Rule parameters.** Each parameter is the median, across the archetype's selected wallets, of
+  each wallet's own median:
+  - k: |z24| for trend, |z4| for fade;
+  - f: |funding APR| for funding-contrarian;
+  - H: the median hold, rounded to whole hours, at least 1 h (the candle resolution).
+- **Rule mechanics.**
+  - Decisions are made at each hourly close; entry is at that close and exit H hours later at
+    that close.
+  - One position per coin at a time.
+  - Costs are 2 × (0.045% + 0.01%) = 0.11% per trade; funding is −direction × Σ hourly rates
+    settled during the hold.
+- **Universe:** BTC, ETH and SOL, plus the 3 coins with the most exploration notional across the
+  10 selected wallets.
+- **Clusters and α:** clusters are the ISO week of entry; α = 0.05 / (number of frozen rules).
+- **Caveats:**
+  - Hyperliquid funding rests at +0.00125% per hour (≈ 11% APR) when the premium is small. So
+    "opposite to funding's sign" mostly means "short", and f may land near 11%.
+  - The month-PnL pool covers 2026-09-19 → 10-19, which is inside the holdout. Holdout skill
+    persistence is therefore biased upward; it is reported, not tested.
