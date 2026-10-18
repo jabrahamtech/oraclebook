@@ -119,7 +119,13 @@ def main():
             print(f"  trailing APR >= {f:.0%}: {line(e[e.apr >= f])}")
         return
     h = d[(d.split == "holdout") & (d.apr >= a.apr)]
+    w = h[h.day.dt.dayofweek == 0]  # Monday entries only: 7-day holds that never overlap
+    s, sw = C.summarise(h, alpha=a.alpha), C.summarise(w, alpha=a.alpha)
+    passed = (s.get("n", 0) >= 200 and s["clusters"] >= 20 and s["lo"] > 0
+              and sw.get("n", 0) > 0 and sw["lo"] > 0)
     print(f"HOLDOUT B3 apr>={a.apr} alpha={a.alpha}: {line(h, a.alpha)}")
+    print(f"  non-overlapping (Monday entries): {line(w, a.alpha)}")
+    print(f"  verdict (Amendment 3): {'PASS' if passed else 'FAIL'}")
 
 
 if __name__ == "__main__":

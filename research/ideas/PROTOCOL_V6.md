@@ -199,3 +199,18 @@ therefore price entries from CLOB `prices-history` instead:
 
 Either way, the entry pays that price + 1¢ (spread allowance) + the 0.07·p·(1−p) fee. P3 keeps
 the tape, which only it needs.
+
+## Amendment 3 (2026-10-19, after B3's exploration, before any holdout)
+
+**Frozen rule:** B3 with F ≥ 10% APR. Exploration cleared the bar at every F (RESULTS_V6.md).
+10% is chosen because it has the most holds (1,124) and week clusters (77), so it is the most
+likely to meet the holdout minimums. It is not chosen for having the highest return.
+
+**Holdout, run once.** Overlapping 7-day holds make the week-clustered interval too narrow, so
+the holdout also reports a non-overlapping version: entries on Mondays only, so no two holds of
+one coin overlap. B3 passes only if both of these hold, at α = 0.05 / 7:
+- the pre-registered daily-entry version passes (CI above 0, ≥ 200 holds, ≥ 20 clusters);
+- the non-overlapping version's CI is also above 0.
+
+`hl_funding.py holdout --apr 0.10 --alpha 0.0071` prints both lines and the verdict. The other
+round-6 ideas are not frozen: nothing qualified, or they could not be run.
