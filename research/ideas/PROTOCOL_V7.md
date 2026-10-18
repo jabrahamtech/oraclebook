@@ -219,3 +219,8 @@ Amendment 1's "closed trades" is therefore read the way Hyperliquid's `closedPnl
 Everything else is unchanged: thresholds, archetypes, rules and tests. The Amendment 2 funnel is
 still reported next to this one. Selection and fingerprints under this amendment are exploratory;
 the backtest and the holdout have not been touched.
+
+Addendum, same day, while fetching. Paging ran for over 20 minutes on a single account, so fills
+are now fetched only up to the exploration end. An account with more than 200,000 fills before
+then is not paged further and counts as truncated. The holdout fills of the selected wallets
+are fetched when the holdout runs.
