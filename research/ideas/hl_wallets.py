@@ -336,7 +336,8 @@ def test(mode, rule, k, hold, coins, alpha):
           f"{C.fmt(s)}")
     if mode == "backtest":
         ok = s.get("n", 0) >= 200 and s["clusters"] >= 20 and s["lo"] > 0
-        print(f"  verdict (backtest half): {'PASS' if ok else 'FAIL'}; holdout sign pending")
+        print("  verdict (backtest half): "
+              + ("PASS; the holdout must have the same sign" if ok else "FAIL; the rule fails"))
     return s
 
 

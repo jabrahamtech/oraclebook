@@ -82,4 +82,36 @@ Two things about the frozen rules, stated before the backtest:
 
 ## Backtest (2024-01-01 → 2026-07-20, Binance USDⓈ-M 1h, each rule run once)
 
-Pending.
+```
+BACKTEST R-fade k=1.064 H=61h coins=BTC,ETH,SOL alpha=0.0167: n=912 clusters=133 ret=-0.31% [-0.79, +0.18]
+BACKTEST R-trend k=0.611 H=45h coins=BTC,ETH,SOL alpha=0.0167: n=1,284 clusters=133 ret=-0.15% [-0.51, +0.21]
+BACKTEST R-fund k=0.11 H=787h coins=BTC,ETH,SOL alpha=0.0167: n=78 clusters=48 ret=+1.90% [-4.43, +8.10]
+```
+
+**All three rules fail.** A rule passes only if its backtest CI is above zero, so the holdout
+cannot change these verdicts. The holdout has not been run; it would now only report whether
+the 10 wallets stayed profitable.
+
+- **R-fade and R-trend.** Each has enough trades and week clusters, and both lose a little per
+  trade after the 0.11% round trip and funding. The selected wallets' common habit, buying
+  dips and selling rips over 4 hours and holding for days, does not show up as an edge on BTC,
+  ETH and SOL over 2024–2026.
+- **R-fund.** It has 78 trades, short of the 200 minimum, and its interval spans zero.
+- **What the test leaves out.** The wallets traded mostly HIP-3 stock perps and timed entries in
+  ways a fixed σ threshold does not capture. The rules test the habit, not the wallets.
+
+## Reproduce
+
+```bash
+cd research/data
+python -I hl_api.py raw leaderboard
+python -I hl_api.py raw wallets --top 200 --start 2026-07-20 --need-before 2026-09-12
+python -I hl_api.py raw binance --coins BTC,ETH,SOL --start 2023-12-01 --end 2026-07-20
+cd ../ideas
+python -I hl_wallets.py explore          # fetches the candles and funding it needs
+python -I hl_wallets.py backtest --rule fade --k 1.064 --hold 61 \
+    --coins BTC,ETH,SOL,xyz:SKHX,xyz:SNDK,xyz:XYZ100 --alpha 0.0167   # and trend / fund
+```
+
+The leaderboard and the served fills change daily, so a re-fetch selects a different set of
+wallets.
