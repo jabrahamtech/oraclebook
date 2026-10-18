@@ -147,9 +147,10 @@ The live calls made to check formats showed the following:
 
 Fixed now:
 
-- **Dates.** Run date 2026-10-19. Window [2026-07-21, 2026-10-19) UTC. Exploration is the
-  first 54 days, [2026-07-21, 2026-09-13); the holdout is [2026-09-13, 2026-10-19).
-  The backtest runs from 2024-01-01 to 2026-07-21.
+- **Dates (UTC).** The run date is 2026-10-18 UTC; it is 2026-10-19 on the operator's local
+  clock. Window [2026-07-20, 2026-10-18). Exploration is the first 54 days,
+  [2026-07-20, 2026-09-12); the holdout is [2026-09-12, 2026-10-18). The backtest runs from
+  2024-01-01 to 2026-07-20.
 - **Candles.**
   - Fingerprints and the holdout use Hyperliquid 1h candles.
   - The backtest uses Binance USDⓈ-M 1h klines (data.binance.vision), because Hyperliquid's do not
@@ -165,9 +166,10 @@ Fixed now:
   - **Maker share:** the share of fills with `crossed` = false.
   - **Vault:** `userRole` returns "vault".
   - **Account value:** the leaderboard's.
-- **Truncation.** A wallet whose fills since the window start reach the 10,000 cap has lost its
-  oldest fills. It is reported but cannot be selected, because its exploration record is
-  incomplete.
+- **Truncation.** A wallet that has ≥ 10,000 fills, and whose earliest served fill is more
+  than a day after the window start, has lost its oldest fills. One test account returned
+  19,399 fills, all from the last 2 days, so the documented cap is not exact. Such a wallet
+  is reported but cannot be selected, because its exploration record is incomplete.
 - **Signals.**
   - σ is the standard deviation of 1h log returns over the trailing 720 hours, with at least 360.
   - At time t the moves are r4 and r24, the log returns over the 4 and 24 one-hour candles
@@ -193,5 +195,5 @@ Fixed now:
 - **Caveats:**
   - Hyperliquid funding rests at +0.00125% per hour (≈ 11% APR) when the premium is small. So
     "opposite to funding's sign" mostly means "short", and f may land near 11%.
-  - The month-PnL pool covers 2026-09-19 → 10-19, which is inside the holdout. Holdout skill
+  - The month-PnL pool covers 2026-09-18 → 10-18, which is inside the holdout. Holdout skill
     persistence is therefore biased upward; it is reported, not tested.
