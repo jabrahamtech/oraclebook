@@ -197,3 +197,25 @@ Fixed now:
     "opposite to funding's sign" mostly means "short", and f may land near 11%.
   - The month-PnL pool covers 2026-09-18 → 10-18, which is inside the holdout. Holdout skill
     persistence is therefore biased upward; it is reported, not tested.
+
+## Amendment 3 (2026-10-19, exploratory): closed trades and holds for traders who are rarely flat
+
+Written after seeing the exploration eligibility funnel, before any rule was frozen and before any
+backtest or holdout data was used. Only the funnel counts, and the one wallet that passed, had
+been seen. With 153 of the 200 accounts fetched, 64 have served exploration fills. Under
+Amendment 2's round-trip definition, 1 of those 64 has ≥ 100 closed trades. The large accounts
+scale in and out of standing positions: the median account is flat once in 54 days, while
+closing hundreds of orders.
+
+Amendment 1's "closed trades" is therefore read the way Hyperliquid's `closedPnl` uses it:
+
+- **Closed trade:** an order (a distinct `oid`) with a fill that reduces a position.
+- **Entry:** an order whose first fill opens or adds to a position. A flip opens the new side.
+  The direction is the side of the resulting position; the time is that first fill.
+- **Hold:** positions are matched first-in-first-out per coin. The median hold is the
+  size-weighted median time from opening fill to reducing fill, over lots opened inside the
+  window.
+
+Everything else is unchanged: thresholds, archetypes, rules and tests. The Amendment 2 funnel is
+still reported next to this one. Selection and fingerprints under this amendment are exploratory;
+the backtest and the holdout have not been touched.
