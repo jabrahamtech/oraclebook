@@ -81,3 +81,58 @@ Parameters are the median of the selected wallets' own behaviour in that archety
 - A maker's edge depends on queue position, which the tape does not show; R-mm's trade-through
   fill is conservative.
 - Two-sided wallets may also earn maker rebates and liquidity rewards, which the tape omits.
+
+## Amendment 1 (2026-10-19, before any data): Hyperliquid wallets
+
+Polymarket does not resolve from the operator's machine (Australia blocks it), so this round
+reverses **Hyperliquid** perp traders instead. Hyperliquid is a venue the bot can reach and
+trade, and every account's fills are public. Steps 1–4 above apply with these substitutions.
+
+- **Data:**
+  - Leaderboard: `stats-data.hyperliquid.xyz/Mainnet/leaderboard` (month and all-time PnL,
+    volume).
+  - Fills: `info` → `userFillsByTime`, giving coin, price, size, side, direction, closed PnL,
+    fee, `crossed` (taker) and time. Hyperliquid serves at most each account's latest 10,000
+    fills, so truncation is reported per wallet.
+  - Funding: `info` → `fundingHistory`.
+  - Candles: `info` → `candleSnapshot` (1h).
+- **Window:** the 90 days before the run date; exploration is the first 60% of days.
+- **Wallet selection:** the 200 accounts with the highest month PnL. Eligible means account
+  value ≥ $10k, ≥ 100 closed trades and ≥ 20 active days in exploration, and not a vault. The
+  top 10 by exploration closed PnL net of fees are selected.
+- **Fingerprint:**
+  - maker share and median holding time;
+  - median leverage, where clearinghouse data allows;
+  - coins traded;
+  - direction at entry against the coin's prior 4h and 24h return (follows or fades);
+  - direction against the sign of funding;
+  - entry hour (UTC).
+- **Archetypes, by fixed cut-offs:**
+  - **trend:** ≥ 65% of entries follow the prior 24h move, and median hold ≥ 1 h;
+  - **fade:** ≥ 65% of entries go against the prior 4h move;
+  - **funding-contrarian:** ≥ 65% of entries are opposite to funding's sign;
+  - **market maker:** maker share ≥ 0.7 and median hold < 10 min. Reported only; not
+    reproducible at our latency.
+  - **other**.
+- **Frozen rules (at most 3), with parameters from the selected wallets' medians and no tuning on
+  PnL:**
+  - **R-trend:** enter in the direction of a ≥ kσ prior-24h move and hold H;
+  - **R-fade:** enter against a ≥ kσ prior-4h move and hold H;
+  - **R-fund:** go short when funding APR ≥ f, long when ≤ −f, and hold H.
+
+  Each pays taker fees of 0.045% per side plus 1 bp slippage, and pays or receives funding.
+  It runs on BTC, ETH, SOL and the coins the selected wallets traded most.
+- **Test, per frozen rule:**
+  - on 1h candles from 2024-01-01 to the start of the 90-day window, data the rules were not
+    inferred from;
+  - and on the 90-day holdout.
+
+  A rule passes if its per-trade return net of costs has a CI above zero on the earlier data at
+  α = 0.05 / (number of frozen rules), with ≥ 200 trades over ≥ 20 week-clusters, and the
+  holdout has the same sign. The same top-10 wallets' holdout PnL is also reported (skill
+  persistence).
+- **Caveats:**
+  - A month-PnL leaderboard is mostly luck plus leverage, which is why the rules, not the
+    wallets, are judged.
+  - A 10,000-fill cap truncates high-frequency accounts.
+  - Inferring discretionary traders' rules from fills may find no stable rule ("other").
