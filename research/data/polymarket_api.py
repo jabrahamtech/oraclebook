@@ -3,12 +3,12 @@ markets and resolutions, data-api for the taker tape (with wallets), CLOB prices
 price paths. Responses are untrusted data: parsed as JSON, never executed. Resumable and
 rate-limited; prints one line per series.
 
-Layout under <raw_root>/polymarket_api/<series>/: markets.parquet, trades.parquet,
-prices.parquet, _source.json.
+Layout under <raw_root>/polymarket_api/<series>/: markets.parquet, trades.parquet (taker
+fills), trades_all.parquet (both sides, --both-sides), prices.parquet, _source.json.
 
 Usage:
   python -I polymarket_api.py <raw> updown --assets BTC,ETH --interval 5m|15m|1h|4h
-         --start 2026-09-24 --end 2026-10-15 [--trades]
+         --start 2026-09-24 --end 2026-10-15 [--trades [--both-sides]]
   python -I polymarket_api.py <raw> events --name hit --title "^What price will (Bitcoin|Ethereum)
          hit in" --start 2024-11-01 --end 2026-10-15
   python -I polymarket_api.py <raw> prices --series btc-1h,eth-1h --token up_token
@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import datetime as dt
+import functools
 import json
 import pathlib
 import re
@@ -131,12 +132,13 @@ def starts(asset, interval, t0, t1):
     return []
 
 
-def trades(condition_id):
-    """Every taker trade of a market; truncated when data-api stops before the oldest trade."""
+def trades(condition_id, taker_only=True):
+    """Every taker trade of a market (or every fill on both sides with taker_only=False);
+    truncated when data-api stops before the oldest trade."""
     out, offset = [], 0
     while True:
         d = get(f"{DATA_API}/trades?market={condition_id}&limit={PAGE}&offset={offset}"
-                "&takerOnly=true")
+                f"&takerOnly={str(taker_only).lower()}")
         if d is None:
             return condition_id, out, offset > 0
         out += [
@@ -155,7 +157,7 @@ def _save(folder, m, **meta):
         {"fetched_at": dt.datetime.now(dt.UTC).isoformat(), "markets": len(m), **meta}, indent=1))
 
 
-def updown(root, assets, interval, t0, t1, threads, with_trades):
+def updown(root, assets, interval, t0, t1, threads, with_trades, both_sides=False):
     for asset in assets:
         folder = root / f"{asset.lower()}-{interval}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -172,12 +174,13 @@ def updown(root, assets, interval, t0, t1, threads, with_trades):
         _save(folder, m, gamma=GAMMA, interval=interval, start=t0, end=t1)
         msg = f"{folder.name}: {len(m)} markets"
         if with_trades:
-            tp = folder / "trades.parquet"
+            tp = folder / ("trades_all.parquet" if both_sides else "trades.parquet")
             old = pd.read_parquet(tp) if tp.exists() else pd.DataFrame(columns=["condition_id"])
             need = sorted(set(m.condition_id) - set(old.condition_id))
             parts, cut = [old], 0
+            fetch = functools.partial(trades, taker_only=not both_sides)
             with ThreadPoolExecutor(threads) as ex:
-                for i, (cid, rows, trunc) in enumerate(ex.map(trades, need), 1):
+                for i, (cid, rows, trunc) in enumerate(ex.map(fetch, need), 1):
                     parts.append(pd.DataFrame(rows, columns=TRADE_COLS).assign(condition_id=cid))
                     cut += trunc
                     if i % 200 == 0:
@@ -263,6 +266,7 @@ def main():
     ap.add_argument("--start", default="2024-11-01")
     ap.add_argument("--end", default="2026-10-15")
     ap.add_argument("--trades", action="store_true")
+    ap.add_argument("--both-sides", action="store_true")
     ap.add_argument("--name")
     ap.add_argument("--title")
     ap.add_argument("--series")
@@ -276,7 +280,7 @@ def main():
     t0, t1 = (int(dt.datetime.fromisoformat(f"{d}T00:00:00+00:00").timestamp())
               for d in (a.start, a.end))
     if a.mode == "updown":
-        updown(root, a.assets.split(","), a.interval, t0, t1, a.threads, a.trades)
+        updown(root, a.assets.split(","), a.interval, t0, t1, a.threads, a.trades, a.both_sides)
     elif a.mode == "events":
         events(root, a.name, a.title, t0, t1)
     else:

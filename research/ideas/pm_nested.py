@@ -107,9 +107,18 @@ def trades(p, q, c, edge):
         if np.isnan(asks).any():
             continue
         cost = sum(asks) + sum(C.poly_fee(x) for x in asks)
-        rows.append({"cluster": r.event_id_l, "price": cost, "y": r.payoff,
-                     "ret": (r.payoff - cost) / cost})
+        rows.append({"cluster": r.close_ts.floor("h"), "day": r.close_ts.floor("D"),
+                     "price": cost, "y": r.payoff, "ret": (r.payoff - cost) / cost})
     return pd.DataFrame(rows)
+
+
+def line(t, alpha=0.05):
+    """Hour-clustered result, with the day-clustered interval (PROTOCOL_V6.md, Clusters)."""
+    s = C.summarise(t, alpha=alpha)
+    if not s.get("n"):
+        return C.fmt(s)
+    d = C.summarise(t, cluster_col="day", alpha=alpha)
+    return f"{C.fmt(s)}; by day [{d['lo'] * 100:+.2f}, {d['hi'] * 100:+.2f}] ({d['clusters']} days)"
 
 
 def main():
@@ -129,10 +138,9 @@ def main():
         for (ll, ls), g in ps.groupby(["length_l", "length_s"]):
             print(f"  {ll} vs last {ls}: {len(g)} pairs, {episodes(c[c.pair.isin(g.index)])}")
         for e in EDGES:
-            print(f"    cost<=1-{e}: {C.fmt(C.summarise(trades(ps, q, c, e)))}")
+            print(f"    cost<=1-{e}: {line(trades(ps, q, c, e))}")
         return
-    print(f"HOLDOUT edge={a.edge} alpha={a.alpha}: "
-          f"{C.fmt(C.summarise(trades(ps, q, c, a.edge), alpha=a.alpha))}")
+    print(f"HOLDOUT edge={a.edge} alpha={a.alpha}: {line(trades(ps, q, c, a.edge), a.alpha)}")
 
 
 if __name__ == "__main__":

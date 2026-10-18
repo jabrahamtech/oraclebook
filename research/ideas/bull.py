@@ -46,7 +46,7 @@ def fetch(start, end, symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT")):
         parts = [p for p in map(_zip_csv, urls) if p is not None]
         k = pd.concat(parts, ignore_index=True)
         k = k[pd.to_numeric(k.t, errors="coerce").notna()].astype({"t": "int64", "close": float})
-        unit = np.where(k.t > 10**14, "us", "ms")
+        unit = np.where(k.t > 10**14, "us", "ms").tolist()
         k["day"] = [pd.Timestamp(t, unit=u, tz="UTC") for t, u in zip(k.t, unit, strict=True)]
         k[["day", "close"]].drop_duplicates("day").sort_values("day").to_parquet(
             folder() / f"{sym}.parquet", index=False)

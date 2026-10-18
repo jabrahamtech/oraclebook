@@ -33,17 +33,22 @@ def folder():
     return C.RAW / "hyperliquid_funding"
 
 
-def post(body, tries=8):
+def post(body, tries=12):
+    """JSON body of a 200 reply; anything else is retried (a 429's body is `null`, which would
+    otherwise read as the end of the history)."""
     for i in range(tries):
         r = subprocess.run(
-            ["curl", "-s", "-m", "60", "-H", "Content-Type: application/json", "-d",
-             json.dumps(body), INFO],
+            ["curl", "-s", "-m", "60", "-w", "\n%{http_code}", "-H",
+             "Content-Type: application/json", "-d", json.dumps(body), INFO],
             capture_output=True, text=True, check=False,
         )
-        try:
-            return json.loads(r.stdout)
-        except json.JSONDecodeError:
-            time.sleep(min(30, 2**i))
+        text, _, code = r.stdout.rpartition("\n")
+        if code == "200":
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+        time.sleep(min(30, 2**i))
     sys.exit(f"POST {body} failed after {tries} tries")
 
 
