@@ -147,3 +147,44 @@ round swaps in the options market's volatility.
 - Reward-aware Polymarket quoting, which needs weeks of recorded L2.
 - A live Polymarket negRisk basket scan.
 - GDP1's forward test, due at the Q3 2026 advance release (late October).
+
+## Amendment 1 (2026-10-18, before any data): crypto the bot can trade, bull regimes
+
+**Scope.** Only strategies this bot can execute: Polymarket crypto markets (`oraclebook`'s
+adapter) and Hyperliquid perps (feed already wired; an executor would be new). Kalshi is
+geoblocked for the operator, so **P5 is withdrawn** and `cx_iv.py` removed.
+
+**Bull regime (fixed).** BTC's 30-day log return > ln(1.10), from the last Binance daily close
+known at the decision time — the threshold round 4 used.
+
+**B1. Bull drift in hourly / 4-hour Up/Down.** In a bull regime, does Up win more often than its
+price? Break-even arithmetic, fixed now: pure drift shifts P(Up) by about φ(0)·μΔt/(σ√Δt). With
++10% per 30 days and 50% annual volatility that is ≈ 1.1pp per hour and ≈ 2.3pp per 4 hours,
+against a fee of ≈ 1.8¢ near 0.50 plus half the spread. So B1 can pass only if the market prices
+less than the drift.
+- Data: Gamma + data-api tape for hourly (`{coin}-up-or-down-{month}-{day}-{h}{am|pm}-et`, the
+  bot's slug) and 4-hour (`{coin}-updown-4h-{ts}`; tested only if those markets are found), BTC
+  and ETH, 2024-11-01 → 2026-10-14.
+- Rule B1(Δt): in a bull regime, at the open + 2 min (hourly) or + 5 min (4 h), buy Up at the
+  next taker BUY of Up within 60 s; hold to resolution. The same rule outside bull regimes is
+  reported as a control, not tested.
+
+**B2. Upside longshots in bull runs.** Monthly "What price will <coin> hit in <month>?" events.
+- Rule B2(k, regime): one day after the month starts, for every upside strike at least k above
+  the Binance close known then whose last YES trade in the previous 24 h was ≤ 0.20, buy NO at
+  the next taker BUY of NO within 6 h; hold to resolution.
+- Grid: k ∈ {15%, 30%}; regime ∈ {bull, all}. Clusters: event (coin-month). Expect ≤ ~70 events:
+  probably underpowered, said now.
+
+**B3. Hyperliquid funding carry.** BTC, ETH, SOL perps, hourly funding and premium from
+`fundingHistory`, 2024-01-01 → 2026-10-14.
+- Rule B3(F): at each UTC day start, if the trailing 7-day mean funding annualises to ≥ F, short
+  the perp and hold spot for 7 days. Return per $1 of spot = Σ funding + (premium at entry −
+  premium at exit) − 0.20% round-trip costs (four taker legs at 0.05%).
+- Grid: F ∈ {10%, 20%, 30%} APR. Clusters: entry week; overlapping holds share clusters.
+- Also reported: the annualised return, next to a 5% cash yield. B3 is a yield, not a
+  prediction edge.
+
+**Split.** 60/40 by time (B2: by event close), as for P1–P4.
+
+**Holdout α = 0.05 / 7** for P1–P4 and B1–B3, replacing 0.05 / 5 (no data had been seen).
