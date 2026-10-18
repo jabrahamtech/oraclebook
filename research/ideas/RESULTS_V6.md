@@ -1,7 +1,7 @@
 # Round 6: untried ideas and bull-regime crypto — exploration results
 
 Protocol: [PROTOCOL_V6.md](PROTOCOL_V6.md) with Amendments 1–2 (committed before any data).
-**Exploration only: no holdout has been run.** Data fetched 2026-10-19 from a laptop on which no
+One holdout has been run: B3 at F ≥ 10% (Amendment 3), which **failed**. Data fetched 2026-10-19 from a laptop on which no
 `*.polymarket.com` host resolves (Gamma, data-api, CLOB), so the three ideas that need those APIs
 (P3, B1, B2) have not been run yet. **Nothing here shows a profitable strategy.**
 
@@ -15,7 +15,7 @@ Protocol: [PROTOCOL_V6.md](PROTOCOL_V6.md) with Amendments 1–2 (committed befo
 | P4 | nested expiries | polyorderbooks | 31 pairs, 980 quoted seconds, none under $1 | nothing (0 trades) |
 | B1 | bull drift, hourly / 4 h | Gamma + CLOB | not run (host unreachable) | – |
 | B2 | upside longshots in bull runs | Gamma + CLOB | not run (host unreachable) | – |
-| B3 | Hyperliquid funding carry | Hyperliquid | all three cells' CIs above 0 | one of F ∈ {10, 20, 30}% — pick pending |
+| B3 | Hyperliquid funding carry | Hyperliquid | all three cells' CIs above 0 | F ≥ 10% (Amendment 3) → holdout **fail** |
 
 1. **P1 cannot be tested on kachoio.** The publisher records each market from its open: exactly
    300 one-second ticks, the first at `open_ts` (BTC and ETH checked in the raw files), so no
@@ -25,9 +25,9 @@ Protocol: [PROTOCOL_V6.md](PROTOCOL_V6.md) with Amendments 1–2 (committed befo
    out-of-sample log-loss gain to the alt's own price (|gain| ≤ 0.0001).
 3. **No nested pair ever cost under $1 after fees** in the 4-day polyorderbooks sample, which
    holds only 31 nested pairs with a strike gap ≥ 3 bp. P4 stays descriptive, as the protocol says.
-4. **Funding carry earned more than cash in exploration, at every threshold.** This is a yield,
-   not a prediction edge. The CIs are optimistic (see B3), and one threshold has to be picked
-   before the holdout.
+4. **Funding carry beat cash in exploration but not in the holdout.** Frozen at F ≥ 10% and run
+   once, it returned −0.02% per 7-day hold [−0.06, +0.01] over 241 holds. The sign flipped, so
+   it fails.
 
 ## P2: BTC leads the alt markets (kachoio, closes before 2026-04-30 17:41 UTC)
 
@@ -72,10 +72,21 @@ the change in premium.
 - **Return is per $1 of spot.** The margin posted for the short perp is not counted, so the return
   per dollar of total capital is lower. Liquidation and exchange risk are not modelled.
 - **Which rule to freeze.** The protocol freezes one rule per idea but does not say how to choose
-  between cells that all clear the bar. **F ≥ 10%** has the most holds and clusters, so it is the
-  most likely to reach the holdout's ≥ 200 trades over ≥ 20 clusters. F ≥ 30% has the highest lower
-  bound but only 25 exploration clusters. The pick has to be made, and logged, before the holdout
-  (α = 0.05 / 7).
+  between cells that all clear the bar. **F ≥ 10%** was frozen (Amendment 3) because it has the
+  most holds and clusters, so it is the most likely to reach the holdout's ≥ 200 trades over
+  ≥ 20 clusters. It was not chosen for its return.
+
+### B3 holdout (entries 2025-09-01 → 2026-10-07, run once, α = 0.05 / 7)
+
+```
+HOLDOUT B3 apr>=0.1 alpha=0.0071: n=241 clusters=28 ret=-0.02% [-0.06, +0.01] ≈ -1.0% APR
+  non-overlapping (Monday entries): n=34 clusters=21 ret=-0.01% [-0.03, +0.02] ≈ -0.3% APR
+  verdict (Amendment 3): FAIL
+```
+
+Funding cooled in the holdout: only 241 of about 1,200 coin-days had a trailing APR ≥ 10%,
+against 1,124 of 1,803 in exploration. Even on those days, the next 7 days' funding did not cover
+the 0.20% round trip. The rule's high trailing funding did not persist, so it fails.
 
 ## Notes
 
