@@ -183,16 +183,16 @@ def hourly(k):
     d = pd.DataFrame({"close": k.close, "sigma": sigma, "r4": lc - lc.shift(4),
                       "r24": lc - lc.shift(24)})
     d["z4"], d["z24"] = d.r4 / (2 * d.sigma), d.r24 / (np.sqrt(24) * d.sigma)
-    d.index = d.index + TD("1h")  # known when the candle closes
+    d.index = (d.index + TD("1h")).astype(C.UTC)  # known when the candle closes
     return d.rename_axis("known").reset_index()
 
 
 def funding(coin):
     p = H.coin_file(root() / "funding", coin)
     if not p.exists():
-        return pd.DataFrame(columns=["hour", "rate"])
+        return pd.DataFrame({"hour": pd.Series(dtype=C.UTC), "rate": pd.Series(dtype=float)})
     f = pd.read_parquet(p)
-    hour = pd.to_datetime(f.time, unit="ms", utc=True).dt.floor("h")
+    hour = pd.to_datetime(f.time, unit="ms", utc=True).dt.floor("h").astype(C.UTC)
     return pd.DataFrame({"hour": hour, "rate": f.rate}).drop_duplicates("hour").sort_values("hour")
 
 
@@ -216,7 +216,7 @@ def market(coins, source, lo, hi):
 
 def fingerprint(opened, mkt):
     """Entry behaviour against the prior 4h / 24h move and funding's sign (exploration)."""
-    e = opened.assign(ts=pd.to_datetime(opened.open, unit="ms", utc=True))
+    e = opened.assign(ts=pd.to_datetime(opened.open, unit="ms", utc=True).astype(C.UTC))
     parts = []
     for coin, g in e.groupby("coin"):
         if coin not in mkt:

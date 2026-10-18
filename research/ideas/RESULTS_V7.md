@@ -1,27 +1,85 @@
-# Round 7: reverse the best current crypto wallets — not run yet
+# Round 7: reverse the best Hyperliquid wallets — exploration and frozen rules
 
-Protocol: [PROTOCOL_V7.md](PROTOCOL_V7.md). Status 2026-10-19: no data fetched, no wallet
-selected, no rule frozen. Every source this round needs except Binance is on
-`*.polymarket.com` (Gamma, data-api, lb-api), and none of those hosts resolves from the laptop
-that ran round 6.
+Protocol: [PROTOCOL_V7.md](PROTOCOL_V7.md), Amendments 1–3. The Polymarket version was not run,
+because `*.polymarket.com` does not resolve from the operator's machine; Amendment 1 moved the
+round to Hyperliquid. Data is public: the leaderboard was fetched 2026-10-18 17:48 UTC, with
+fills, roles, positions, 1h candles and funding from the `info` API. The window is
+2026-07-20 → 2026-10-18 and exploration runs to 2026-09-12. **The rules below were frozen here,
+before any backtest or holdout data was used. Nothing here shows a profitable strategy.**
 
-## Ready
+## Selection (exploration)
 
-- `research/data/polymarket_api.py --trades --both-sides` sends `takerOnly=false` and writes
-  `trades_all.parquet`. The file is separate so that the taker-only tape (P3) and the both-sides tape
-  never mix in the resumable cache.
-- Binance 1-second klines, checked with one live call
-  (`data.binance.vision/data/spot/daily/klines/BTCUSDT/1s/BTCUSDT-1s-2026-10-14.zip`): no
-  header, the same 12 columns as the 1-minute files, open time in microseconds, 86,400 rows a
-  day, about 2.4 MB zipped per coin-day.
+| step | accounts |
+|---|---|
+| top 200 by month PnL | 200 |
+| account value ≥ $10k | 192 |
+| not a vault | 191 |
+| exploration fills served (not truncated, not late) | 91 |
+| ≥ 100 closing orders (Amendment 3) | 19 |
+| ≥ 20 active days | **12** |
 
-## To do once the Polymarket hosts resolve
+Under Amendment 2's round-trip definition only 2 accounts qualify. The large accounts scale in
+and out of standing positions and are rarely flat. Of the 109 accounts dropped at the "fills
+served" step:
+- 45 had lost their oldest fills, or had more than 200,000 of them;
+- 55 had no fill served before the exploration end;
+- the rest had no perp fills in the window.
 
-1. Make one live call each to Gamma, data-api (`takerOnly=false`) and lb-api before writing any
-   parsing code. The open question is how a maker fill is told apart from a taker fill in the
-   both-sides tape.
-2. Fetch BTC and ETH Up/Down markets at 5m, 15m and 1h, closing in the 30 days before the run date:
-   `polymarket_api.py raw updown --interval <iv> --start <run date − 30 d> --end <run date>
-   --trades --both-sides`.
-3. Implement and run the exploration half: PnL, eligibility and top 10, then fingerprints,
-   archetypes and frozen rules. Then report one line per wallet.
+Only 12 accounts are eligible, so the "top 10" includes two with negative exploration PnL.
+
+## The 10 selected wallets (exploration, 2026-07-20 → 2026-09-12)
+
+| wallet | PnL net of fees | closing orders | maker share | median hold | archetype |
+|---|---|---|---|---|---|
+| 0x9c062c…0560 | +$2.86M | 287 | 0.08 | 86.5 h | fade |
+| 0x288ed4…b336 | +$0.60M | 684 | 0.95 | 454.7 h | fade |
+| 0x9751ce…a97e | +$0.51M | 451 | 0.77 | 786.6 h | funding-contrarian |
+| 0xfc98b6…8777 | +$0.46M | 253 | 0.19 | 7.3 h | fade |
+| 0xf9faba…3275 | +$0.42M | 799 | 0.10 | 8.9 h | other |
+| 0xb1b365…ae8f | +$0.39M | 434 | 0.88 | 7.7 h | fade |
+| 0x07423f…57c2 | +$0.30M | 1,003 | 0.13 | 45.3 h | trend |
+| 0x051748…4d23 | +$0.02M | 1,096 | 0.51 | 100.0 h | other |
+| 0x4fe260…ac59 | −$0.11M | 701 | 0.76 | 240.5 h | fade |
+| 0xd6e1a6…f256 | −$0.36M | 1,041 | 0.92 | 36.4 h | fade |
+
+Shares of entries, in wallet order:
+
+| measure | values |
+|---|---|
+| follows the prior 24h move | 0.15, 0.28, 0.63, 0.19, 0.58, 0.30, 0.68, 0.55, 0.13, 0.27 |
+| fades the prior 4h move | 0.88, 0.70, 0.34, 0.72, 0.54, 0.69, 0.45, 0.46, 0.72, 0.70 |
+| opposite to funding's sign | 0.45, 0.50, 0.86, 0.62, 0.30, 0.55, 0.76, 0.42, 0.67, 0.76 |
+
+- **Fading is the common behaviour.** Six of the ten fade the prior 4h move on ≥ 65% of their
+  entries.
+- **Few wallets for the other two rules.** One wallet is trend and one is funding-contrarian.
+  No wallet is a market maker under the cut-off: three have a maker share ≥ 0.7, but they hold
+  for hours to weeks.
+- **Coins.** Most are HIP-3 stock perps (`xyz:` SK Hynix, SanDisk, Micron, XYZ100) alongside
+  BTC, ETH and ZEC.
+- **Other columns in `research/data/out/hl_wallets.csv`.** That file has, per wallet, leverage
+  (current positions only), entry hour and candle coverage (87–100% of entries).
+
+## Frozen rules (α = 0.05 / 3 ≈ 0.0167)
+
+Parameters are the medians of the wallets' own medians (Amendment 2). They involve no PnL.
+
+| rule | from | parameters | backtest command |
+|---|---|---|---|
+| R-fade | 6 wallets | enter against a ≥ **1.064σ** prior-4h move, hold **61 h** | `hl_wallets.py backtest --rule fade --k 1.064 --hold 61 --coins BTC,ETH,SOL,xyz:SKHX,xyz:SNDK,xyz:XYZ100 --alpha 0.0167` |
+| R-trend | 1 wallet | enter with a ≥ **0.611σ** prior-24h move, hold **45 h** | `… --rule trend --k 0.611 --hold 45 …` |
+| R-fund | 1 wallet | short when funding APR ≥ **0.110**, long when ≤ −0.110, hold **787 h** | `… --rule fund --k 0.110 --hold 787 …` |
+
+Universe: BTC, ETH and SOL, plus the three coins the selected wallets traded most: `xyz:SKHX`,
+`xyz:SNDK` and `xyz:XYZ100`. Those three are HIP-3 stock perps with no Binance USDⓈ-M perp, so the
+backtest covers BTC, ETH and SOL only; the holdout covers all six.
+
+Two things about the frozen rules, stated before the backtest:
+- **R-fund cannot meet the trade minimum.** Its 787 h hold allows at most about 28
+  non-overlapping trades per coin from 2024-01 to 2026-07, so it cannot reach 200 trades.
+- **R-fund is close to "short whenever funding is at its baseline".** The funding-contrarian
+  threshold is Hyperliquid's resting funding (10.95% APR), as Amendment 2 expected.
+
+## Backtest (2024-01-01 → 2026-07-20, Binance USDⓈ-M 1h, each rule run once)
+
+Pending.
