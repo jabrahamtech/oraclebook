@@ -105,7 +105,8 @@ def test_hourly_slug_uses_et_start_hour_across_dst():
     assert hourly_slug("BTC", 1794288600) == "bitcoin-up-or-down-november-10-2026-12am-et"
     # 2026-07-01 16:10Z = 12:10 EDT -> the 12pm market (summer offset)
     assert hourly_slug("eth", 1782922200) == "ethereum-up-or-down-july-1-2026-12pm-et"
-    assert hourly_slug("DOGE", 1794288600) is None
+    assert hourly_slug("DOGE", 1794288600) == "dogecoin-up-or-down-november-10-2026-12am-et"
+    assert hourly_slug("ZEC", 1794288600) is None
     assert market_slug("BTC", 5, 1779449400) == "btc-updown-5m-1779449400"
 
 
@@ -119,9 +120,13 @@ def test_market_parsing_reads_fee_schedule_and_v2_position_ids():
     assert m.meta["fee_schedule"] == {"rate": 0.07, "exponent": 1.0}
     assert m.meta["version"] == "v1"
 
-    v2 = _to_market({**base, "version": "v2", "positionIds": ["p1", "p2"]})
-    assert v2.token_ids == ("p1", "p2") and v2.meta["version"] == "v2"
-    assert not v2.fee_verified
+    # V2 ids are unverified against the socket/order API: skipped, not traded blind
+    assert _to_market({**base, "version": "v2", "positionIds": ["p1", "p2"]}) is None
+    assert _to_market({**base, "clobTokenIds": '["a","b"]', "feeSchedule": {"rate": None}}) \
+        is not None  # a malformed schedule doesn't abort discovery
+    off = _to_market({**base, "clobTokenIds": '["a","b"]', "feesEnabled": False,
+                      "feeSchedule": {"rate": 0.07, "exponent": 1}})
+    assert off.meta["fee_schedule"]["rate"] == 0.0
 
     assert _to_market({**base, "clobTokenIds": "[]"}) is None          # nothing to subscribe
     assert _to_market({**base, "clobTokenIds": '["a"]'}) is None       # ids/outcomes mismatch

@@ -23,7 +23,20 @@ GAMMA = "https://gamma-api.polymarket.com"
 
 _ET = ZoneInfo("America/New_York")
 # Hourly markets use the asset's name in a human-readable slug.
-_HOURLY_NAMES = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "xrp"}
+_HOURLY_NAMES = {
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "xrp",
+    "DOGE": "dogecoin", "BNB": "bnb", "HYPE": "hype",
+}
+# Only protocol versions whose ids are verified against the market socket and order API.
+_SUPPORTED_VERSIONS = {"v1"}
+_warned: set[tuple] = set()
+
+
+def _warn_once(event: str, key: tuple, **fields) -> None:
+    """Discovery reruns every interval; log each distinct problem once, not every run."""
+    if (event, key) not in _warned:
+        _warned.add((event, key))
+        logger.warning(event, **fields)
 
 
 def interval_start(minutes: int, ts: float) -> int:
@@ -39,7 +52,10 @@ def updown_slug(asset: str, minutes: int, ts: float) -> str:
 
 def hourly_slug(asset: str, ts: float) -> str | None:
     """Gamma slug for an hourly up/down market, named by the ET hour it starts, e.g.
-    'bitcoin-up-or-down-november-10-2026-12am-et' (00:00-01:00 ET). None if unknown asset."""
+    'bitcoin-up-or-down-november-10-2026-12am-et' (00:00-01:00 ET). None if unknown asset.
+
+    Unverified: on the autumn DST change the 1am ET hour happens twice and both map to the
+    same slug; how Polymarket names the second one is unknown."""
     name = _HOURLY_NAMES.get(asset.upper())
     if name is None:
         return None
@@ -65,39 +81,43 @@ def _to_market(m: dict) -> Market | None:
     cond = m.get("conditionId")
     if not cond:
         return None
-    # Protocol V2 markets are traded by `positionIds`; V1 markets by `clobTokenIds`.
-    toks = _json_list(m.get("clobTokenIds")) or _json_list(m.get("positionIds"))
+    slug = m.get("slug", "")
+    version = m.get("version") or "v1"
+    if version not in _SUPPORTED_VERSIONS:
+        # Protocol V2 markets are addressed by `positionIds`; whether those work as market
+        # socket and order ids is unverified, so skip them rather than trade them blind.
+        _warn_once("polymarket_markets.unsupported_version", (slug,), slug=slug, version=version)
+        return None
+    toks = _json_list(m.get("clobTokenIds"))
     outs = _json_list(m.get("outcomes"))
     if not toks or (outs and len(toks) != len(outs)):
-        logger.warning(
-            "polymarket_markets.unusable_token_ids",
-            slug=m.get("slug", ""),
-            version=m.get("version"),
-            tokens=len(toks),
-            outcomes=len(outs),
+        _warn_once(
+            "polymarket_markets.unusable_token_ids", (slug,),
+            slug=slug, tokens=len(toks), outcomes=len(outs),
         )
         return None
-    meta: dict = {"slug": m.get("slug", ""), "version": m.get("version") or "v1"}
+    meta: dict = {"slug": slug, "version": version}
     taker_only = True
     fee_verified = False
     schedule = m.get("feeSchedule")
-    if isinstance(schedule, dict) and "rate" in schedule:
+    try:
+        rate = float(schedule["rate"])
+        exponent = float(schedule.get("exponent") or CRYPTO_FEE_EXPONENT)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        rate = None
+    if rate is not None:
+        if m.get("feesEnabled") is False:
+            rate = 0.0
+        # Published by the venue. Note: fee simulation (Venue.fee) still uses the module
+        # constants, which is why a differing schedule is flagged.
         meta["fee_type"] = m.get("feeType", "")
-        meta["fee_schedule"] = {
-            "rate": float(schedule["rate"]),
-            "exponent": float(schedule.get("exponent", CRYPTO_FEE_EXPONENT)),
-        }
+        meta["fee_schedule"] = {"rate": rate, "exponent": exponent}
         taker_only = bool(schedule.get("takerOnly", True))
         fee_verified = True
-        if (meta["fee_schedule"]["rate"], meta["fee_schedule"]["exponent"]) != (
-            CRYPTO_FEE_RATE,
-            CRYPTO_FEE_EXPONENT,
-        ):
-            logger.warning(
-                "polymarket_markets.fee_schedule_differs",
-                slug=meta["slug"],
-                schedule=meta["fee_schedule"],
-                default_rate=CRYPTO_FEE_RATE,
+        if (rate, exponent) != (CRYPTO_FEE_RATE, CRYPTO_FEE_EXPONENT):
+            _warn_once(
+                "polymarket_markets.fee_schedule_differs", (slug,),
+                slug=slug, schedule=meta["fee_schedule"], simulated_rate=CRYPTO_FEE_RATE,
             )
     end_ts: float | None = None
     if m.get("endDate"):
@@ -146,6 +166,12 @@ def discover(assets: list[str], intervals: list[int], now: float | None = None) 
     seen: set[str] = set()
     for asset in assets:
         for minutes in intervals:
+            if market_slug(asset, minutes, now) is None:
+                _warn_once(
+                    "polymarket_markets.unsupported_interval", (asset, minutes),
+                    asset=asset, minutes=minutes,
+                )
+                continue
             found = 0
             for ts in (now, now + minutes * 60):  # current + next interval
                 slug = market_slug(asset, minutes, ts)
@@ -159,10 +185,9 @@ def discover(assets: list[str], intervals: list[int], now: float | None = None) 
             if not found:
                 # Polymarket names some intervals differently (hourly markets use
                 # human-readable slugs), so an empty result is a naming problem to surface.
-                logger.warning(
-                    "polymarket_markets.no_markets_found",
-                    asset=asset,
-                    minutes=minutes,
-                    slug=market_slug(asset, minutes, now),
+                slug = market_slug(asset, minutes, now)
+                _warn_once(
+                    "polymarket_markets.no_markets_found", (slug,),
+                    asset=asset, minutes=minutes, slug=slug,
                 )
     return out

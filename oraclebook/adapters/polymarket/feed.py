@@ -152,7 +152,9 @@ class PolymarketFeed:
                     await self._publish_price_changes(item)
             except Exception:
                 # One malformed item must not drop the connection.
-                logger.exception("polymarket_feed.bad_message", asset_id=item.get("asset_id"))
+                logger.exception(
+                    "polymarket_feed.bad_message", asset_id=item.get("asset_id") or item.get("token_id")
+                )
 
     @staticmethod
     def _age_ms(d: dict) -> float:
