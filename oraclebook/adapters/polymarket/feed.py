@@ -102,7 +102,10 @@ class PolymarketFeed:
     async def _run(self) -> None:
         import aiohttp  # optional adapter dependency
 
-        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10))
+        # trust_env: honour HTTPS_PROXY / NO_PROXY like urllib does for market discovery.
+        self._session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=None, connect=10), trust_env=True
+        )
         while self._running:
             try:
                 self._ws = await self._session.ws_connect(WS_URL)
