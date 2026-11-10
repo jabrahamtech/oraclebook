@@ -21,7 +21,9 @@ fills against it until the next full snapshot. Fill `meta` carries `requested`, 
 are listed in `unfilled` with the reason.
 
 The App feeds this executor every book update via `on_book` before the strategy sees it, and
-publishes any fills that returns. Delayed fills therefore reach the strategy on the first book
+publishes any fills that returns. Simulated time is the `ts` of the latest book update processed
+(the clock is only used before the first one): in Replay the shared clock can run ahead of the
+event being handled, which would misdate decisions. Delayed fills therefore reach the strategy on the first book
 update for that token at or after their arrival time; their `ts` is the arrival time.
 """
 from __future__ import annotations
@@ -80,6 +82,7 @@ class DepthPaperExecutor(PaperExecutor):
         self._depth: dict[str, dict[str, list[list[float]]] | None] = {}
         self._in_flight: list[_Working] = []
         self._resting: dict[str, _Working] = {}
+        self._now: float | None = None
         self.unfilled: list[Unfilled] = []
 
     @property
@@ -88,7 +91,7 @@ class DepthPaperExecutor(PaperExecutor):
         return len(self._in_flight) + len(self._resting)
 
     async def submit(self, orders: list[OrderRequest]) -> list[Fill]:
-        now = self._clock.now()
+        now = self._now if self._now is not None else self._clock.now()
         fills: list[Fill] = []
         for o in orders:
             w = _Working(o, o.size, self._touch(o), now + self._latency)
@@ -101,6 +104,7 @@ class DepthPaperExecutor(PaperExecutor):
     def on_book(self, update: BookUpdate) -> list[Fill]:
         """Advance simulated time to this book update and return any fills it produces."""
         token, ts = update.token_id, update.ts
+        self._now = ts if self._now is None else max(self._now, ts)
         fills: list[Fill] = []
         due = [w for w in self._in_flight if w.order.token_id == token and w.arrive_ts < ts]
         for w in due:
