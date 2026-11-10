@@ -35,8 +35,9 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
 polymarket = ["aiohttp>=3.9"]                       # adapter feed (read-only)
 # CLOB V2 client — the original py-clob-client is archived and V1-signed orders are
-# rejected by the exchange since the April 2026 cutover.
-polymarket-live = ["aiohttp>=3.9", "py-clob-client-v2>=1.0.2"]  # + live execution (signing)
+# rejected by the exchange since the April 2026 cutover. py-clob-client-v2 is itself
+# deprecated (Oct 2026) in favour of `polymarket-client`; capped until we migrate.
+polymarket-live = ["aiohttp>=3.9", "py-clob-client-v2>=1.0.2,<2"]  # + live execution (signing)
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

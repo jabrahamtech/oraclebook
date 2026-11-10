@@ -165,7 +165,7 @@ class PolymarketFeed:
             return 0.0
 
     async def _publish_book(self, d: dict) -> None:
-        token = d.get("asset_id", "")
+        token = d.get("asset_id") or d.get("token_id", "")
         self._levels[token] = {
             "bids": {float(b["price"]): float(b["size"]) for b in d.get("bids", []) if _valid(b)},
             "asks": {float(a["price"]): float(a["size"]) for a in d.get("asks", []) if _valid(a)},
@@ -196,7 +196,7 @@ class PolymarketFeed:
         Changes without a level, or before a token's first snapshot, publish top-of-book only."""
         age = self._age_ms(d)
         for change in d.get("price_changes", [d]):
-            token = change.get("asset_id", "")
+            token = change.get("asset_id") or change.get("token_id", "")
             if not token:
                 continue
             book = self._levels.get(token)

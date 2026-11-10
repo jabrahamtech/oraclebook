@@ -10,10 +10,20 @@ import json
 import time
 import urllib.request
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
+import structlog
+
+from oraclebook.adapters.polymarket.fees import CRYPTO_FEE_EXPONENT, CRYPTO_FEE_RATE
 from oraclebook.core.models import Market
 
+logger = structlog.get_logger()
+
 GAMMA = "https://gamma-api.polymarket.com"
+
+_ET = ZoneInfo("America/New_York")
+# Hourly markets use the asset's name in a human-readable slug.
+_HOURLY_NAMES = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "xrp"}
 
 
 def interval_start(minutes: int, ts: float) -> int:
@@ -27,6 +37,24 @@ def updown_slug(asset: str, minutes: int, ts: float) -> str:
     return f"{asset.lower()}-updown-{minutes}m-{interval_start(minutes, ts)}"
 
 
+def hourly_slug(asset: str, ts: float) -> str | None:
+    """Gamma slug for an hourly up/down market, named by the ET hour it starts, e.g.
+    'bitcoin-up-or-down-november-10-2026-12am-et' (00:00-01:00 ET). None if unknown asset."""
+    name = _HOURLY_NAMES.get(asset.upper())
+    if name is None:
+        return None
+    t = datetime.fromtimestamp(interval_start(60, ts), _ET)
+    hour = f"{t.hour % 12 or 12}{'am' if t.hour < 12 else 'pm'}"
+    return f"{name}-up-or-down-{t.strftime('%B').lower()}-{t.day}-{t.year}-{hour}-et"
+
+
+def market_slug(asset: str, minutes: int, ts: float) -> str | None:
+    """The Gamma slug for an asset's up/down market of `minutes` containing `ts`."""
+    if minutes == 60:
+        return hourly_slug(asset, ts)
+    return updown_slug(asset, minutes, ts)
+
+
 def _get(url: str, timeout: float = 15.0):
     req = urllib.request.Request(url, headers={"User-Agent": "oraclebook"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -37,12 +65,40 @@ def _to_market(m: dict) -> Market | None:
     cond = m.get("conditionId")
     if not cond:
         return None
-    toks = m.get("clobTokenIds")
-    outs = m.get("outcomes")
-    if isinstance(toks, str):
-        toks = json.loads(toks)
-    if isinstance(outs, str):
-        outs = json.loads(outs)
+    # Protocol V2 markets are traded by `positionIds`; V1 markets by `clobTokenIds`.
+    toks = _json_list(m.get("clobTokenIds")) or _json_list(m.get("positionIds"))
+    outs = _json_list(m.get("outcomes"))
+    if not toks or (outs and len(toks) != len(outs)):
+        logger.warning(
+            "polymarket_markets.unusable_token_ids",
+            slug=m.get("slug", ""),
+            version=m.get("version"),
+            tokens=len(toks),
+            outcomes=len(outs),
+        )
+        return None
+    meta: dict = {"slug": m.get("slug", ""), "version": m.get("version") or "v1"}
+    taker_only = True
+    fee_verified = False
+    schedule = m.get("feeSchedule")
+    if isinstance(schedule, dict) and "rate" in schedule:
+        meta["fee_type"] = m.get("feeType", "")
+        meta["fee_schedule"] = {
+            "rate": float(schedule["rate"]),
+            "exponent": float(schedule.get("exponent", CRYPTO_FEE_EXPONENT)),
+        }
+        taker_only = bool(schedule.get("takerOnly", True))
+        fee_verified = True
+        if (meta["fee_schedule"]["rate"], meta["fee_schedule"]["exponent"]) != (
+            CRYPTO_FEE_RATE,
+            CRYPTO_FEE_EXPONENT,
+        ):
+            logger.warning(
+                "polymarket_markets.fee_schedule_differs",
+                slug=meta["slug"],
+                schedule=meta["fee_schedule"],
+                default_rate=CRYPTO_FEE_RATE,
+            )
     end_ts: float | None = None
     if m.get("endDate"):
         try:
@@ -53,14 +109,25 @@ def _to_market(m: dict) -> Market | None:
         venue="polymarket",
         market_id=str(m.get("id") or cond),
         condition_id=cond,
-        token_ids=tuple(toks or ()),
-        outcomes=tuple(outs or ()),
+        token_ids=tuple(str(t) for t in toks),
+        outcomes=tuple(outs),
         tick_size=str(m.get("orderPriceMinTickSize", "0.01")),
         min_order_size=float(m.get("orderMinSize") or 0.0),
         end_ts=end_ts,
-        fee_taker_only=True,
-        meta={"slug": m.get("slug", "")},
+        fee_taker_only=taker_only,
+        fee_verified=fee_verified,
+        meta=meta,
     )
+
+
+def _json_list(value) -> list:
+    """Gamma returns some list fields JSON-encoded as strings."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return list(value) if isinstance(value, list) else []
 
 
 def market_by_slug(slug: str) -> Market | None:
@@ -79,12 +146,23 @@ def discover(assets: list[str], intervals: list[int], now: float | None = None) 
     seen: set[str] = set()
     for asset in assets:
         for minutes in intervals:
+            found = 0
             for ts in (now, now + minutes * 60):  # current + next interval
-                slug = updown_slug(asset, minutes, ts)
-                if slug in seen:
+                slug = market_slug(asset, minutes, ts)
+                if slug is None or slug in seen:
                     continue
                 seen.add(slug)
                 market = market_by_slug(slug)
                 if market is not None:
                     out.append(market)
+                    found += 1
+            if not found:
+                # Polymarket names some intervals differently (hourly markets use
+                # human-readable slugs), so an empty result is a naming problem to surface.
+                logger.warning(
+                    "polymarket_markets.no_markets_found",
+                    asset=asset,
+                    minutes=minutes,
+                    slug=market_slug(asset, minutes, now),
+                )
     return out

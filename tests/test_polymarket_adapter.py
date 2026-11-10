@@ -13,15 +13,16 @@ from oraclebook.adapters.polymarket import (
     taker_fee_per_share,
     updown_slug,
 )
+from oraclebook.adapters.polymarket.fees import CRYPTO_FEE_RATE
 from oraclebook.adapters.polymarket.markets import interval_start
 
 
 def test_fee_peaks_at_midpoint_and_maker_is_free():
-    assert abs(taker_fee_per_share(0.5) - 0.072 * 0.25) < 1e-9  # 0.018/share at p=0.5
+    assert abs(taker_fee_per_share(0.5) - CRYPTO_FEE_RATE * 0.25) < 1e-9
     assert taker_fee_per_share(0.5) > taker_fee_per_share(0.10)
     assert taker_fee_per_share(0.5) > taker_fee_per_share(0.90)
     assert fee_amount(0.5, 100, is_maker=True) == 0.0
-    assert abs(fee_amount(0.5, 100) - 1.8) < 1e-6
+    assert abs(fee_amount(0.5, 100) - 100 * CRYPTO_FEE_RATE * 0.25) < 1e-6
 
 
 def test_interval_alignment_and_slug():
@@ -36,7 +37,7 @@ def test_venue_conformance_and_fee():
     v = PolymarketVenue(assets=["BTC"], intervals=[5])
     assert isinstance(v, ob.Venue)
     assert v.name == "polymarket"
-    assert abs(v.fee(0.5, 100, is_maker=False) - 1.8) < 1e-6
+    assert abs(v.fee(0.5, 100, is_maker=False) - 100 * CRYPTO_FEE_RATE * 0.25) < 1e-6
     assert v.fee(0.5, 100, is_maker=True) == 0.0
 
 
@@ -95,3 +96,47 @@ async def test_feed_survives_a_malformed_level_and_resubscribes_new_markets(monk
     f._ws = FakeWS()
     await f._discover()  # markets rolled: only the new tokens get subscribed
     assert sent == [{"operation": "subscribe", "assets_ids": ["b1", "b2"], "level": 2}]
+
+
+def test_hourly_slug_uses_et_start_hour_across_dst():
+    from oraclebook.adapters.polymarket.markets import hourly_slug, market_slug
+
+    # 2026-11-10 05:30Z = 00:30 EST -> the 12am market
+    assert hourly_slug("BTC", 1794288600) == "bitcoin-up-or-down-november-10-2026-12am-et"
+    # 2026-07-01 16:10Z = 12:10 EDT -> the 12pm market (summer offset)
+    assert hourly_slug("eth", 1782922200) == "ethereum-up-or-down-july-1-2026-12pm-et"
+    assert hourly_slug("DOGE", 1794288600) is None
+    assert market_slug("BTC", 5, 1779449400) == "btc-updown-5m-1779449400"
+
+
+def test_market_parsing_reads_fee_schedule_and_v2_position_ids():
+    from oraclebook.adapters.polymarket.markets import _to_market
+
+    base = {"conditionId": "0xc", "id": "1", "slug": "s", "outcomes": '["Up","Down"]'}
+    m = _to_market({**base, "clobTokenIds": '["a","b"]', "feeType": "crypto_fees_v2",
+                    "feeSchedule": {"rate": 0.07, "exponent": 1, "takerOnly": True}})
+    assert m.token_ids == ("a", "b") and m.fee_verified
+    assert m.meta["fee_schedule"] == {"rate": 0.07, "exponent": 1.0}
+    assert m.meta["version"] == "v1"
+
+    v2 = _to_market({**base, "version": "v2", "positionIds": ["p1", "p2"]})
+    assert v2.token_ids == ("p1", "p2") and v2.meta["version"] == "v2"
+    assert not v2.fee_verified
+
+    assert _to_market({**base, "clobTokenIds": "[]"}) is None          # nothing to subscribe
+    assert _to_market({**base, "clobTokenIds": '["a"]'}) is None       # ids/outcomes mismatch
+
+
+async def test_feed_accepts_token_id_alias():
+    import json
+
+    from oraclebook.adapters.polymarket.feed import PolymarketFeed
+    from oraclebook.core.bus import Bus
+    from oraclebook.core.events import EVT_BOOK_UPDATE
+
+    bus = Bus()
+    sub = bus.subscribe_raw(EVT_BOOK_UPDATE)
+    f = PolymarketFeed(bus, assets=[], intervals=[])
+    await f._on_message(json.dumps({"token_id": "T", "bids": [{"price": "0.4", "size": "5"}],
+                                    "asks": []}))
+    assert sub.get_nowait().token_id == "T"
