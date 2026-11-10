@@ -13,6 +13,7 @@ from oraclebook.core.bus import Bus
 from oraclebook.core.clock import RealClock, ReplayClock
 from oraclebook.core.ledger import Ledger
 from oraclebook.core.paper_executor import PaperExecutor
+from oraclebook.core.depth_paper_executor import DepthPaperExecutor
 from oraclebook.core.models import (
     Fill,
     Market,
@@ -55,6 +56,7 @@ __all__ = [
     "BaseStrategy",
     "CompleteSetMaker",
     "PaperExecutor",
+    "DepthPaperExecutor",
     "Bus",
     "Ledger",
     "PositionTracker",

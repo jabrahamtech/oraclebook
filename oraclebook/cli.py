@@ -100,6 +100,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Recording file, or a directory containing .jsonl recordings.",
     )
     replay.add_argument(
+        "--fill-model",
+        choices=("instant", "depth"),
+        default="instant",
+        help="instant: fill at the limit price for full size. depth: walk the recorded book, "
+        "with latency and partial fills (DepthPaperExecutor).",
+    )
+    replay.add_argument(
+        "--latency-ms",
+        type=float,
+        default=0.0,
+        metavar="MS",
+        help="Order latency for --fill-model depth (default 0).",
+    )
+    replay.add_argument(
         "--report",
         action="store_true",
         help="Print a compact fill-count / PnL summary after replay.",
@@ -203,9 +217,14 @@ async def _run_replay(args: argparse.Namespace) -> int:
     total_fills = 0
     total_fees = 0.0
     total_notional = 0.0
+    slippage_cost = 0.0
+    unfilled = 0
     for path in recording_paths:
         strategy = strategy_cls()
-        app = await run_replay(path, strategy)
+        app = await run_replay(
+            path, strategy, fill_model=args.fill_model, latency_ms=args.latency_ms
+        )
+        unfilled += len(getattr(app.executor, "unfilled", ()))
         ledger = app.ledger
         if not isinstance(ledger, Ledger):
             continue  # run_replay always wires a concrete Ledger; narrow for the type checker
@@ -214,6 +233,7 @@ async def _run_replay(args: argparse.Namespace) -> int:
             total_fills += 1
             total_fees += payload.get("fee", 0.0)
             total_notional += payload.get("price", 0.0) * payload.get("size", 0.0)
+            slippage_cost += payload.get("meta", {}).get("slippage", 0.0) * payload.get("size", 0.0)
 
     if args.report:
         print("Replay report")
@@ -222,6 +242,10 @@ async def _run_replay(args: argparse.Namespace) -> int:
         print(f"  fills:      {total_fills}")
         print(f"  notional:   {total_notional:.2f}")
         print(f"  fees:       {total_fees:.4f}")
+        if args.fill_model == "depth":
+            print(f"  latency_ms: {args.latency_ms:g}")
+            print(f"  slippage:   {slippage_cost:.4f}  (USD vs touch at decision time)")
+            print(f"  unfilled:   {unfilled} order(s) not filled in full")
     else:
         print(f"Replay complete: {total_fills} fills across {len(recording_paths)} recording(s)")
 

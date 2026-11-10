@@ -9,16 +9,24 @@ strategy yields the same fills every run. Recordings that mix multiple topics ar
 recorded `seq` order, but because topics are consumed on separate tasks the cross-topic
 *interleaving* is best-effort, not byte-guaranteed — keep a backtest to one feed for strict
 reproducibility.
+
+Fill models: `"instant"` (default) fills every order at its limit price for full size;
+`"depth"` uses `DepthPaperExecutor` — walks the recorded depth, applies `latency_ms`, fills
+partially, and charges `fee(price, size, is_maker)` (e.g. a Venue's `fee`).
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import tempfile
+from typing import Literal
 
 from oraclebook.core.app import App
+from oraclebook.core.book import PositionTracker
 from oraclebook.core.clock import ReplayClock
+from oraclebook.core.depth_paper_executor import DepthPaperExecutor, FeeFn
 from oraclebook.core.ledger import Ledger
+from oraclebook.core.protocols import Executor
 from oraclebook.replay.replay_feed import ReplayFeed
 
 
@@ -29,13 +37,29 @@ async def run_replay(
     gates: list | None = None,
     starting_balance: float = 1000.0,
     ledger_path: str | None = None,
+    fill_model: Literal["instant", "depth"] = "instant",
+    latency_ms: float = 0.0,
+    fee: FeeFn | None = None,
 ) -> App:
     """Replay `recording_path` through `strategy` in paper mode; return the finished App."""
     clock = ReplayClock(strict=False)
     ledger = Ledger(ledger_path or os.path.join(tempfile.mkdtemp(), "replay_events.jsonl"))
+    book = PositionTracker()
+    executor: Executor | str
+    if fill_model == "depth":
+        executor = DepthPaperExecutor(
+            book, starting_balance, latency_ms=latency_ms, fee=fee, clock=clock
+        )
+    elif fill_model == "instant":
+        if latency_ms or fee is not None:
+            raise ValueError("latency_ms and fee require fill_model='depth'")
+        executor = "paper"
+    else:
+        raise ValueError(f"unknown fill_model: {fill_model!r}")
     app = App(
         strategy=strategy,
-        executor="paper",
+        executor=executor,
+        book=book,
         gates=gates,
         clock=clock,
         ledger=ledger,

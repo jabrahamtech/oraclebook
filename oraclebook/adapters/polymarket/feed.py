@@ -41,6 +41,8 @@ class PolymarketFeed:
         self._intervals = intervals
         self._ping_interval = ping_interval
         self._token_market: dict[str, str] = {}
+        # Local L2 book per token, rebuilt from snapshots + price_change deltas.
+        self._levels: dict[str, dict[str, dict[float, float]]] = {}
         self._session = None
         self._ws = None
         self._task: asyncio.Task | None = None
@@ -123,14 +125,16 @@ class PolymarketFeed:
 
     async def _publish_book(self, d: dict) -> None:
         token = d.get("asset_id", "")
-        bids = sorted(
-            ((float(b["price"]), float(b["size"])) for b in d.get("bids", []) if _valid(b)),
-            key=lambda x: -x[0],
-        )
-        asks = sorted(
-            ((float(a["price"]), float(a["size"])) for a in d.get("asks", []) if _valid(a)),
-            key=lambda x: x[0],
-        )
+        self._levels[token] = {
+            "bids": {float(b["price"]): float(b["size"]) for b in d.get("bids", []) if _valid(b)},
+            "asks": {float(a["price"]): float(a["size"]) for a in d.get("asks", []) if _valid(a)},
+        }
+        await self._publish_levels(token, self._age_ms(d))
+
+    async def _publish_levels(self, token: str, age_ms: float) -> None:
+        book = self._levels[token]
+        bids = sorted(((p, s) for p, s in book["bids"].items() if s > 0), key=lambda x: -x[0])
+        asks = sorted((p, s) for p, s in book["asks"].items() if s > 0)
         await self._bus.publish(
             EVT_BOOK_UPDATE,
             BookUpdate(
@@ -140,18 +144,34 @@ class PolymarketFeed:
                 best_ask=asks[0][0] if asks else 0.0,
                 bids=tuple(bids),
                 asks=tuple(asks),
-                age_ms=self._age_ms(d),
+                age_ms=age_ms,
             ),
         )
 
     async def _publish_price_changes(self, d: dict) -> None:
         """Polymarket emits `price_change` events between full book snapshots; without
-        handling them the feed goes stale after the initial dump."""
+        handling them the feed goes stale after the initial dump. Each change sets one
+        level's size (0 removes it) — applied to the local book so depth stays current.
+        Changes without a level, or before a token's first snapshot, publish top-of-book only."""
         age = self._age_ms(d)
         for change in d.get("price_changes", [d]):
             token = change.get("asset_id", "")
             if not token:
                 continue
+            book = self._levels.get(token)
+            side = {"BUY": "bids", "SELL": "asks"}.get(str(change.get("side", "")).upper())
+            if book is not None and side is not None and _valid(change):
+                try:
+                    price, size = float(change["price"]), float(change["size"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+                else:
+                    if size > 0:
+                        book[side][price] = size
+                    else:
+                        book[side].pop(price, None)
+                    await self._publish_levels(token, age)
+                    continue
             try:
                 best_bid = float(change.get("best_bid", 0) or 0)
                 best_ask = float(change.get("best_ask", 0) or 0)

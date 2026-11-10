@@ -25,10 +25,11 @@ from oraclebook.core.events import (
     EVT_ORDER_REJECTED,
     EVT_POSITION_RESOLVED,
     EVT_PRICE_TICK,
+    BookUpdate,
     OrderFilled,
     OrderRejected,
 )
-from oraclebook.core.models import OrderRequest, RiskContext
+from oraclebook.core.models import Fill, OrderRequest, RiskContext
 from oraclebook.core.paper_executor import PaperExecutor
 from oraclebook.core.protocols import Clock, Executor, Feed, MetricsSink, Strategy, Venue
 
@@ -91,7 +92,7 @@ class App:
         """Wire handlers, spawn consumers, and start the feed. Returns once running."""
         self._running = True
         await self.strategy.start()
-        self._spawn(EVT_BOOK_UPDATE, self.strategy.on_book, produces_orders=True)
+        self._spawn(EVT_BOOK_UPDATE, self._on_book, produces_orders=True)
         self._spawn(EVT_PRICE_TICK, self.strategy.on_price, produces_orders=True)
         self._spawn(EVT_INTERVAL_BOUNDARY, self.strategy.on_boundary, produces_orders=True)
         self._spawn(EVT_FILLS, self.strategy.on_fill, produces_orders=False)
@@ -160,7 +161,9 @@ class App:
             )
             logger.info("app.order_rejected", gate=check.gate, reason=check.reason, n=len(orders))
             return
-        fills = await self.executor.submit(orders)
+        await self._apply_fills(await self.executor.submit(orders), orders)
+
+    async def _apply_fills(self, fills: list[Fill], orders: list[OrderRequest]) -> None:
         for f in fills:
             self.book.on_fill(f)
             if self.ledger is not None:
@@ -169,6 +172,14 @@ class App:
             await self.bus.publish(
                 EVT_FILLS, OrderFilled(fills=tuple(fills), orders=tuple(orders))
             )
+
+    async def _on_book(self, event: BookUpdate) -> list[OrderRequest]:
+        """Let a book-aware executor (e.g. DepthPaperExecutor) see the update first, so
+        delayed and resting orders fill against it before the strategy reacts."""
+        on_book = getattr(self.executor, "on_book", None)
+        if on_book is not None:
+            await self._apply_fills(on_book(event), [])
+        return await self.strategy.on_book(event)
 
     async def _on_resolution(self, event) -> None:
         """Accumulate realised daily PnL from settlements (this is what drives DailyLossGate),
