@@ -172,3 +172,30 @@ async def test_rejected_builder_code_falls_back_to_zero(monkeypatch):
     fills = await ex.submit([_buy(10)])
     assert len(fills) == 1                       # order still went through
     assert fake.posted[-1].builder_code == _BYTES32_ZERO
+
+
+async def test_ioc_and_market_orders_are_refused_not_posted_as_resting():
+    from oraclebook import TimeInForce
+
+    client = _FakeClient()
+    ex = PolymarketExecutor(client=client)
+    fok = _buy(10)
+    fok.time_in_force = TimeInForce.FOK
+    mkt = _buy(10)
+    mkt.order_type = OrderType.MARKET
+    assert await ex.submit([fok, mkt]) == []
+    assert client.posted == []
+
+
+def test_fill_amounts_are_read_by_side():
+    buy = _buy(10)
+    resp = {"status": "matched", "makingAmount": "2.2", "takingAmount": "4"}  # paid 2.2 for 4
+    fill = PolymarketExecutor._fill_from_response(buy, resp)
+    assert fill.size == 4 and abs(fill.price - 0.55) < 1e-9
+
+    sell = OrderRequest(token_id="t1", market_id="m1", side=Side.SELL, price=0.5, size=10,
+                        order_type=OrderType.LIMIT, strategy="s")
+    fill = PolymarketExecutor._fill_from_response(sell, {"status": "matched",
+                                                         "makingAmount": "6",
+                                                         "takingAmount": "3.3"})
+    assert fill.size == 6 and abs(fill.price - 0.55) < 1e-9

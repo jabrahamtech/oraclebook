@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from oraclebook.core.models import OrderRequest, RiskCheck, RiskContext, Side
 
+_EPS = 1e-9  # float tolerance: 100 * 0.07 is 7.000000000000001
+
 
 def _buys(orders: list[OrderRequest]) -> list[OrderRequest]:
     return [o for o in orders if o.side != Side.SELL]
@@ -70,12 +72,12 @@ class OrderSizeGate:
     def check(self, orders: list[OrderRequest], ctx: RiskContext) -> RiskCheck:
         for o in _buys(orders):
             notional = o.price * o.size
-            if notional < self.min_notional_usd:
+            if notional < self.min_notional_usd - _EPS:
                 return RiskCheck(
                     False, f"notional ${notional:.2f} below min ${self.min_notional_usd:.2f}",
                     self.name,
                 )
-            if self.max_notional_usd > 0 and notional > self.max_notional_usd:
+            if self.max_notional_usd > 0 and notional > self.max_notional_usd + _EPS:
                 return RiskCheck(
                     False, f"notional ${notional:.2f} above max ${self.max_notional_usd:.2f}",
                     self.name,
@@ -93,7 +95,7 @@ class BalanceGate:
 
     def check(self, orders: list[OrderRequest], ctx: RiskContext) -> RiskCheck:
         cost = sum(o.price * o.size for o in _buys(orders)) * (1.0 + self.fee_rate)
-        if cost > 0 and ctx.balance < cost:
+        if cost > 0 and ctx.balance < cost - _EPS:
             return RiskCheck(
                 False, f"insufficient balance: ${ctx.balance:.2f} < batch ${cost:.2f}", self.name
             )
@@ -118,7 +120,7 @@ class PerMarketCapGate:
         for o in _buys(orders):
             batch[o.market_id] = batch.get(o.market_id, 0.0) + o.price * o.size
             total = deployed.get(o.market_id, 0.0) + batch[o.market_id]
-            if total > self.cap_usd:
+            if total > self.cap_usd + _EPS:
                 return RiskCheck(
                     False, f"per-market cap: ${total:.2f} on {o.market_id[:12]} > ${self.cap_usd:.2f}",
                     self.name,
@@ -135,10 +137,11 @@ class TotalExposureGate:
         self.max_usd = max_usd
 
     def check(self, orders: list[OrderRequest], ctx: RiskContext) -> RiskCheck:
-        if self.max_usd <= 0:
-            return RiskCheck(True)
-        projected = ctx.book.total_deployed() + sum(o.price * o.size for o in _buys(orders))
-        if projected > self.max_usd:
+        buys = _buys(orders)
+        if self.max_usd <= 0 or not buys:
+            return RiskCheck(True)  # SELLs only reduce exposure
+        projected = ctx.book.total_deployed() + sum(o.price * o.size for o in buys)
+        if projected > self.max_usd + _EPS:
             return RiskCheck(
                 False, f"total exposure ${projected:.2f} > cap ${self.max_usd:.2f}", self.name
             )
@@ -156,7 +159,7 @@ class MaxPositionsGate:
     def check(self, orders: list[OrderRequest], ctx: RiskContext) -> RiskCheck:
         held = {p.token_id for p in ctx.book.positions()}
         new = {o.token_id for o in _buys(orders)} - held
-        if len(held) + len(new) > self.limit:
+        if new and len(held) + len(new) > self.limit:  # adding to or closing a held token is fine
             return RiskCheck(
                 False, f"max positions {self.limit}: {len(held)} held + {len(new)} new", self.name
             )

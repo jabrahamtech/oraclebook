@@ -38,8 +38,8 @@ class CoalescingBuffer:
     def get_nowait(self) -> Any:
         if not self._latest:
             raise asyncio.QueueEmpty
-        _, item = self._latest.popitem()
-        return item
+        # Oldest pending key first, so one busy key can't starve the others.
+        return self._latest.pop(next(iter(self._latest)))
 
     async def get(self) -> Any:
         while not self._latest:

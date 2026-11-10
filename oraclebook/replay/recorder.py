@@ -30,8 +30,9 @@ class Recorder:
         self._bus = bus
         self._path = path
         self._topics = topics
-        self._seq = 0
+        self._seq = _next_seq(path)
         self._tasks: list[asyncio.Task] = []
+        self._subs: list[tuple[str, asyncio.Queue]] = []
         self._running = False
         directory = os.path.dirname(path)
         if directory:
@@ -42,23 +43,44 @@ class Recorder:
         self._running = True
         for topic in self._topics:
             sub = self._bus.subscribe_raw(topic)
+            self._subs.append((topic, sub))
             self._tasks.append(asyncio.create_task(self._consume(topic, sub)))
 
     async def stop(self) -> None:
         self._running = False
         for t in self._tasks:
             t.cancel()
+        # Write whatever was published but not yet consumed, so the tail isn't lost.
+        for topic, sub in self._subs:
+            while not sub.empty():
+                self._write(topic, sub.get_nowait())
         self._fh.flush()
         self._fh.close()
 
     async def _consume(self, topic: str, sub) -> None:
         async for event in Bus.consume(sub, running=lambda: self._running):
-            rec = {
-                "seq": self._seq,
-                "topic": topic,
-                "ts": getattr(event, "ts", 0.0),
-                "type": type(event).__name__,
-                "payload": _jsonable(event),
-            }
-            self._seq += 1
-            self._fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            self._write(topic, event)
+
+    def _write(self, topic: str, event) -> None:
+        rec = {
+            "seq": self._seq,
+            "topic": topic,
+            "ts": getattr(event, "ts", 0.0),
+            "type": type(event).__name__,
+            "payload": _jsonable(event),
+        }
+        self._seq += 1
+        self._fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+
+
+def _next_seq(path: str) -> int:
+    """Continue seq after an existing recording, so appended sessions replay in order."""
+    last = -1
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    last = max(last, int(json.loads(line)["seq"]))
+                except (ValueError, KeyError, TypeError):
+                    continue
+    return last + 1

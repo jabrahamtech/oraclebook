@@ -6,7 +6,11 @@ is the concrete implementation of the `Book` protocol the gates and App depend o
 """
 from __future__ import annotations
 
+import structlog
+
 from oraclebook.core.models import Fill, Position, Side
+
+logger = structlog.get_logger()
 
 _EPS = 1e-9
 
@@ -39,7 +43,18 @@ class PositionTracker:
                 )
                 pos.size = new_size
                 pos.cumulative_fee += fill.fee
-        elif pos is not None:  # SELL reduces an existing position
+        elif pos is None or fill.size > pos.size + _EPS:
+            # Outcome tokens can't be shorted: a SELL beyond the holding is a venue/executor
+            # bug. Close what is held and say so rather than inventing a short.
+            logger.warning(
+                "book.sell_exceeds_position",
+                token_id=fill.token_id,
+                sell=fill.size,
+                held=pos.size if pos is not None else 0.0,
+            )
+            if pos is not None:
+                del self._positions[fill.token_id]
+        else:  # SELL reduces an existing position
             pos.size -= fill.size
             pos.cumulative_fee += fill.fee
             if pos.size <= _EPS:

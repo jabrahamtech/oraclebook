@@ -45,7 +45,7 @@ class Ledger:
     def record(self, topic: str, obj: Any, ts: float | None = None) -> None:
         """Append one event: {topic, ts, payload}."""
         rec = {"topic": topic, "ts": ts if ts is not None else time.time(), "payload": _jsonable(obj)}
-        self._fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+        self._fh.write(json.dumps(rec, separators=(",", ":"), default=str) + "\n")
         self._fh.flush()
 
     # MetricsSink + ResolutionSink

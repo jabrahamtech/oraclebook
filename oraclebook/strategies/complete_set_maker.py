@@ -34,14 +34,17 @@ class CompleteSetMaker(BaseStrategy):
         self._quoted: set[str] = set()                # quote each market once (reference)
 
     async def on_book(self, book: BookUpdate) -> list[OrderRequest]:
-        if not book.market_id or book.best_bid <= 0:
+        if not book.market_id:
             return []
         legs = self._bids.setdefault(book.market_id, {})
+        if book.best_bid <= 0:
+            legs.pop(book.token_id, None)  # the bid vanished: don't quote a stale price
+            return []
         legs[book.token_id] = book.best_bid
         if len(legs) < 2 or book.market_id in self._quoted:
             return []  # need both legs, and only quote a given market once
         edge = 1.0 - sum(legs.values())
-        if edge < self.min_edge:
+        if edge < self.min_edge - 1e-9:  # 1 - (0.05 + 0.93) is 0.01999... in floats
             return []
         self._quoted.add(book.market_id)
         return [

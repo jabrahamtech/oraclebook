@@ -36,6 +36,11 @@ def _executor(latency_ms=0.0, fee=None):
     return ex, clock
 
 
+def _hold(ex, size, price=0.30):
+    ex._book.on_fill(ob.Fill(order_id="h", token_id="T", market_id="m", side=ob.Side.BUY,
+                             price=price, size=size))
+
+
 async def test_buy_walks_ask_levels_at_vwap():
     ex, _ = _executor()
     ex.on_book(_book(0, bids=[(0.48, 100)], asks=[(0.50, 100), (0.52, 100), (0.60, 100)]))
@@ -59,6 +64,7 @@ async def test_taken_liquidity_is_gone_for_the_next_order():
 
 async def test_fok_needs_full_size_fak_takes_what_is_there():
     ex, _ = _executor()
+    _hold(ex, 100)
     ex.on_book(_book(0, bids=[(0.40, 30), (0.39, 20)]))
     assert await ex.submit([_order(ob.Side.SELL, 0.40, 50, ob.TimeInForce.FOK)]) == []
     assert ex.unfilled[-1].reason == "fok_insufficient_depth"
@@ -189,3 +195,43 @@ async def test_polymarket_feed_applies_price_change_levels():
     assert last.asks == ((0.52, 60.0),)
     assert last.bids == ((0.49, 25.0), (0.48, 100.0))
     assert (last.best_bid, last.best_ask) == (0.49, 0.52)
+
+
+async def test_sell_is_capped_by_inventory():
+    ex, _ = _executor()
+    ex.on_book(_book(0, bids=[(0.50, 100)]))
+    assert await ex.submit([_order(ob.Side.SELL, 0.50, 10)]) == []          # nothing held
+    assert ex.unfilled[-1].reason == "no_inventory"
+    _hold(ex, 30)
+    fills = await ex.submit([_order(ob.Side.SELL, 0.50, 20), _order(ob.Side.SELL, 0.50, 20)])
+    assert [f.size for f in fills] == [20, 10]  # one batch can't sell the same shares twice
+    assert await ex.get_balance() == pytest.approx(1000 + 15)
+
+
+async def test_buys_cannot_spend_cash_they_do_not_have():
+    clock = ob.ReplayClock(strict=False)
+    ex = DepthPaperExecutor(ob.PositionTracker(), 60.0, clock=clock)
+    ex.on_book(_book(0, asks=[(0.60, 1000)]))
+    for _ in range(3):
+        await ex.submit([_order(ob.Side.BUY, 0.50, 100, ob.TimeInForce.GTC)])
+    assert await ex.get_balance() == pytest.approx(60 - 150)  # gates see the reservation
+    fills = ex.on_book(_book(1, asks=[(0.50, 1000)]))
+    assert sum(f.size for f in fills) == pytest.approx(120)
+    assert ex._balance == pytest.approx(0.0)
+
+
+async def test_gtd_expired_before_arrival_never_fills():
+    ex, _ = _executor(latency_ms=5000)
+    ex.on_book(_book(100, asks=[(0.50, 10)]))
+    await ex.submit([_order(ob.Side.BUY, 0.60, 10, ob.TimeInForce.GTD, expiration=102)])
+    assert ex.on_book(_book(106, asks=[(0.50, 10)])) == []
+    assert ex.unfilled[-1].reason == "expired"
+
+
+async def test_order_arriving_blind_takes_at_the_next_book_price():
+    ex, _ = _executor(fee=lambda p, s, maker: 0.0 if maker else 1.0)
+    ex.on_book(BookUpdate(token_id="T", market_id="m", ts=0, best_bid=0.49, best_ask=0.51))
+    assert await ex.submit([_order(ob.Side.BUY, 0.90, 10, ob.TimeInForce.GTC)]) == []
+    [fill] = ex.on_book(_book(1, asks=[(0.50, 100)]))
+    assert fill.price == pytest.approx(0.50)
+    assert fill.meta["liquidity"] == "taker" and fill.fee == pytest.approx(1.0)

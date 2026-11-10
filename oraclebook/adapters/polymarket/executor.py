@@ -11,8 +11,9 @@ fill stream to capture resting fills. Validate in paper + Replay first; this is 
 path, not a tested-profitable one.
 
 Order types: LIMIT + GTC/GTD map to a standard order (GTD carries the order's
-`expiration`). MARKET orders are not yet wired through this reference client — only
-LIMIT orders are supported; `CompleteSetMaker` only emits LIMIT+GTC.
+`expiration`). FOK/FAK and MARKET orders are not wired through this reference client and
+are refused (logged, not posted) rather than sent as resting limits; `CompleteSetMaker`
+only emits LIMIT+GTC.
 
 Environment:
   POLYMARKET_PRIVATE_KEY                  (required) signer private key
@@ -35,7 +36,7 @@ import os
 
 import structlog
 
-from oraclebook.core.models import Fill, OrderRequest, Position, Side, TimeInForce
+from oraclebook.core.models import Fill, OrderRequest, OrderType, Position, Side, TimeInForce
 
 logger = structlog.get_logger()
 DEFAULT_HOST = "https://clob.polymarket.com"
@@ -115,6 +116,19 @@ class PolymarketExecutor:
     async def submit(self, orders: list[OrderRequest]) -> list[Fill]:
         fills: list[Fill] = []
         for o in orders:
+            if o.order_type != OrderType.LIMIT or o.time_in_force not in (
+                TimeInForce.GTC,
+                TimeInForce.GTD,
+            ):
+                # This client posts every order as a resting limit; sending a FOK/FAK/MARKET
+                # that way would leave unintended exposure on the book. Refuse it instead.
+                logger.error(
+                    "polymarket_exec.unsupported_order",
+                    order=o.id,
+                    order_type=o.order_type.value,
+                    time_in_force=o.time_in_force.value,
+                )
+                continue
             try:
                 resp = await asyncio.to_thread(self._post, o)
             except Exception as exc:
@@ -159,11 +173,18 @@ class PolymarketExecutor:
         if not isinstance(resp, dict) or resp.get("status") != "matched":
             return None
         oid = resp.get("orderID") or resp.get("orderId") or ""
-        # Prefer exchange-reported size/price over the requested values — the CLOB can
+        # Prefer exchange-reported amounts over the requested values — the CLOB can
         # partial-fill or price-improve a marketable order, and the Ledger should record
-        # what actually happened, not what was requested.
-        size = float(resp.get("size_matched") or resp.get("making_amount") or o.size)
-        price = float(resp.get("price") or o.price)
+        # what actually happened. The maker side gives what it sells: USDC for a BUY,
+        # shares for a SELL; the taker side is the other leg.
+        making = _amount(resp, "makingAmount", "making_amount")
+        taking = _amount(resp, "takingAmount", "taking_amount")
+        shares, usdc = (taking, making) if o.side == Side.BUY else (making, taking)
+        size = _amount(resp, "size_matched") or shares
+        if not size:
+            logger.warning("polymarket_exec.fill_size_unreported", order=o.id, assumed=o.size)
+            size = o.size
+        price = _amount(resp, "price") or (usdc / shares if usdc and shares else o.price)
         return Fill(
             order_id=o.id, token_id=o.token_id, market_id=o.market_id, side=o.side,
             price=price, size=size, venue_order_id=str(oid),
@@ -203,3 +224,15 @@ class PolymarketExecutor:
 
     def get_position(self, token_id: str) -> Position | None:
         return None  # the Book tracks positions; live on-chain positions are not wired here
+
+
+def _amount(resp: dict, *keys: str) -> float:
+    """First positive numeric value among `keys` in a CLOB response, else 0."""
+    for key in keys:
+        try:
+            value = float(resp.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return 0.0

@@ -41,3 +41,60 @@ async def test_gate_rejection_blocks_the_fill():
     await asyncio.sleep(0.1)
     await app.stop()
     assert app.book.get("UP") is None  # $5.50 > $3.00 -> rejected
+
+
+class FlakyExecutor(ob.PaperExecutor):
+    """Raises on the first submit, then behaves."""
+
+    def __init__(self, book):
+        super().__init__(book, starting_balance=100.0)
+        self.calls = 0
+
+    async def submit(self, orders):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("venue 503")
+        return await super().submit(orders)
+
+
+async def test_executor_error_does_not_kill_the_consumer():
+    book = ob.PositionTracker()
+    app = ob.App(strategy=Buyer(), executor=FlakyExecutor(book), book=book)
+    await app.start()
+    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.5))
+    await asyncio.sleep(0.05)
+    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.5))
+    await asyncio.sleep(0.05)
+    await app.stop()
+    assert app.executor.calls == 2
+    assert app.book.get("UP").size == 10
+
+
+class SlowExecutor(ob.PaperExecutor):
+    async def submit(self, orders):
+        await asyncio.sleep(0.05)
+        return await super().submit(orders)
+
+
+async def test_stop_waits_for_in_flight_submit():
+    book = ob.PositionTracker()
+    app = ob.App(strategy=Buyer(), executor=SlowExecutor(book), book=book)
+    await app.start()
+    await app.bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.5))
+    await asyncio.sleep(0.01)
+    await app.stop()
+    assert app.book.get("UP").size == 10
+
+
+async def test_resolution_is_written_to_the_ledger(tmp_path):
+    from oraclebook.core.events import EVT_POSITION_RESOLVED, PositionResolved
+
+    ledger = ob.Ledger(str(tmp_path / "events.jsonl"))
+    app = ob.App(strategy=Buyer(), ledger=ledger)
+    await app.start()
+    res = ob.Resolution(token_id="UP", market_id="m1", strategy="buyer", direction="up",
+                        settlement_value=1.0, pnl=4.5)
+    await app.bus.publish(EVT_POSITION_RESOLVED, PositionResolved(resolution=res))
+    await asyncio.sleep(0.05)
+    await app.stop()
+    assert [r["payload"]["pnl"] for r in ledger.resolutions()] == [4.5]

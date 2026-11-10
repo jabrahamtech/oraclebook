@@ -45,3 +45,20 @@ async def test_command_routing():
     bus.register_handler(SubmitOrder, handler)
     assert await bus.send(SubmitOrder()) == "ok"
     assert len(seen) == 1
+
+
+async def test_coalescing_delivers_oldest_pending_key_first():
+    from oraclebook.core.bus import CoalescingBuffer
+
+    buf = CoalescingBuffer("k")
+
+    class E:
+        def __init__(self, k):
+            self.k = k
+
+    buf.put_nowait(E("A"))
+    out = []
+    for _ in range(3):
+        buf.put_nowait(E("B"))
+        out.append(buf.get_nowait().k)
+    assert out[0] == "A"  # a busy key B can't starve A

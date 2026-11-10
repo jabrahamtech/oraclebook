@@ -79,3 +79,21 @@ def test_circuit_breaker_trips_and_fires_on_trip_once():
     assert cb.is_tripped and len(fired) == 1
     cb.record_loss()
     assert len(fired) == 1  # not re-fired while already tripped
+
+
+def test_sell_only_batches_pass_when_over_limits():
+    book = PositionTracker()
+    for t in ("a", "b", "c"):
+        book.on_fill(Fill(order_id=t, token_id=t, market_id="m", side=Side.BUY, price=0.5, size=100))
+    sell = OrderRequest(token_id="a", market_id="m", side=Side.SELL, price=0.5, size=100,
+                        order_type=OrderType.LIMIT, strategy="s")
+    ctx = _ctx(book=book)
+    assert MaxPositionsGate(2).check([sell], ctx).passed
+    assert TotalExposureGate(100).check([sell], ctx).passed
+
+
+def test_at_limit_orders_pass_despite_float_error():
+    order = _buy(price=0.07, size=100)  # 7.000000000000001
+    assert BalanceGate().check([order], _ctx(balance=7.0)).passed
+    assert PerMarketCapGate(7.0).check([order], _ctx()).passed
+    assert TotalExposureGate(7.0).check([order], _ctx()).passed

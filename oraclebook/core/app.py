@@ -87,6 +87,8 @@ class App:
         self._running = False
         self._daily_pnl = 0.0
         self._tasks: list[asyncio.Task] = []
+        self._processing: set[asyncio.Task] = set()
+        self._handling = 0
 
     async def start(self) -> None:
         """Wire handlers, spawn consumers, and start the feed. Returns once running."""
@@ -122,10 +124,23 @@ class App:
         self._running = False
         for t in self._tasks:
             t.cancel()
+        # Let order batches already at the executor finish, so venue-accepted fills still
+        # reach the Book and Ledger.
+        if self._processing:
+            await asyncio.gather(*self._processing, return_exceptions=True)
         if self.feed is not None:
             await self.feed.stop()
         await self.strategy.stop()
         logger.info("app.stopped")
+
+    @property
+    def idle(self) -> bool:
+        """True when no event is queued for or being handled by a consumer."""
+        return (
+            self._handling == 0
+            and not self._processing
+            and not any(d for depths in self.bus.queue_depths.values() for d in depths)
+        )
 
     # --- internals -----------------------------------------------------------
     def _spawn(
@@ -136,13 +151,30 @@ class App:
 
     async def _consume(self, sub, handler: Callable[..., Awaitable], produces_orders: bool) -> None:
         async for event in Bus.consume(sub, running=lambda: self._running):
+            self._handling += 1
             try:
-                result = await handler(event)
+                await self._handle(event, handler, produces_orders)
+            finally:
+                self._handling -= 1
+
+    async def _handle(
+        self, event, handler: Callable[..., Awaitable], produces_orders: bool
+    ) -> None:
+        try:
+            result = await handler(event)
+        except Exception:
+            logger.exception("app.handler_error", handler=getattr(handler, "__name__", "?"))
+            return
+        if produces_orders and result:
+            task = asyncio.ensure_future(self._process(result))
+            self._processing.add(task)
+            task.add_done_callback(self._processing.discard)
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                raise
             except Exception:
-                logger.exception("app.handler_error", handler=getattr(handler, "__name__", "?"))
-                continue
-            if produces_orders and result:
-                await self._process(result)
+                logger.exception("app.process_error", n=len(result))
 
     async def _process(self, orders: list[OrderRequest]) -> None:
         """Gate the batch, execute survivors, apply fills to the Book, republish."""
@@ -166,8 +198,12 @@ class App:
     async def _apply_fills(self, fills: list[Fill], orders: list[OrderRequest]) -> None:
         for f in fills:
             self.book.on_fill(f)
-            if self.ledger is not None:
-                self.ledger.record_fill(f)
+        if self.ledger is not None:
+            for f in fills:
+                try:
+                    self.ledger.record_fill(f)
+                except Exception:
+                    logger.exception("app.ledger_error", order_id=f.order_id)
         if fills:
             await self.bus.publish(
                 EVT_FILLS, OrderFilled(fills=tuple(fills), orders=tuple(orders))
@@ -188,4 +224,6 @@ class App:
         has no PnL to act on."""
         if getattr(event, "resolution", None) is not None:
             self._daily_pnl += event.resolution.pnl
+            if self.ledger is not None:
+                self.ledger.record_resolution(event.resolution)
         await self.strategy.on_resolution(event)

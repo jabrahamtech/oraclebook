@@ -28,3 +28,16 @@ async def test_quotes_a_market_only_once():
     await s.on_book(_book("UP", "m1", 0.48))
     assert len(await s.on_book(_book("DN", "m1", 0.48))) == 2      # first time -> quotes
     assert await s.on_book(_book("UP", "m1", 0.47)) == []          # already quoted m1
+
+
+async def test_vanished_bid_is_not_quoted():
+    s = ob.CompleteSetMaker(min_edge=0.02)
+    await s.on_book(_book("UP", "m1", 0.70))
+    await s.on_book(_book("UP", "m1", 0.0))                      # UP bid gone
+    assert await s.on_book(_book("DN", "m1", 0.25)) == []
+
+
+async def test_edge_exactly_at_floor_quotes():
+    s = ob.CompleteSetMaker(min_edge=0.02)
+    await s.on_book(_book("UP", "m1", 0.05))
+    assert len(await s.on_book(_book("DN", "m1", 0.93))) == 2     # edge 0.02 (0.01999... in floats)

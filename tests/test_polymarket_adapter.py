@@ -58,3 +58,40 @@ def test_live_gamma_discovery_is_lenient():
     for m in markets:  # may be empty between intervals; any returned must be well-formed
         assert m.venue == "polymarket"
         assert len(m.token_ids) >= 2
+
+
+async def test_feed_survives_a_malformed_level_and_resubscribes_new_markets(monkeypatch):
+    import json
+
+    from oraclebook.adapters.polymarket import feed as feed_mod
+    from oraclebook.core.bus import Bus
+    from oraclebook.core.events import EVT_BOOK_UPDATE
+    from oraclebook.core.models import Market
+
+    bus = Bus()
+    sub = bus.subscribe_raw(EVT_BOOK_UPDATE)
+    f = feed_mod.PolymarketFeed(bus, assets=["btc"], intervals=[5])
+    await f._on_message(json.dumps({"asset_id": "T", "bids": [{"price": "0.4", "size": "oops"}],
+                                    "asks": [{"price": "0.6", "size": "10"}]}))
+    assert sub.get_nowait().asks == ((0.6, 10.0),)  # bad level skipped, message kept
+
+    sent = []
+
+    class FakeWS:
+        closed = False
+
+        async def send_json(self, msg):
+            sent.append(msg)
+
+    rounds = iter([["a1", "a2"], ["a2", "b1", "b2"]])
+
+    def fake_discover(assets, intervals):
+        toks = next(rounds)
+        return [Market(venue="polymarket", market_id=f"m-{t}", condition_id="c", token_ids=(t,))
+                for t in toks]
+
+    monkeypatch.setattr(feed_mod, "discover", fake_discover)
+    await f._discover()
+    f._ws = FakeWS()
+    await f._discover()  # markets rolled: only the new tokens get subscribed
+    assert sent == [{"operation": "subscribe", "assets_ids": ["b1", "b2"], "level": 2}]

@@ -41,3 +41,52 @@ async def test_record_then_replay_is_reproducible():
     prices2 = sorted(f["payload"]["price"] for f in app2.ledger.fills())
     assert prices1 == [0.35, 0.38]      # only the cheap ticks were bought
     assert prices1 == prices2           # same recording -> identical result
+
+
+class SlowBuyer(CheapBuyer):
+    async def on_book(self, book):
+        await asyncio.sleep(0.001)
+        return await super().on_book(book)
+
+
+async def test_replay_drains_slow_handlers_and_restores_tuples():
+    path = os.path.join(tempfile.mkdtemp(), "rec.jsonl")
+    bus = Bus()
+    rec = Recorder(bus, path)
+    await rec.start()
+    for _ in range(200):
+        await bus.publish(EVT_BOOK_UPDATE, BookUpdate(token_id="UP", market_id="m1", best_bid=0.30,
+                                                      bids=((0.30, 5.0),)))
+    await rec.stop()  # stop right after publishing: the tail must still be written
+    with open(path) as f:
+        assert sum(1 for _ in f) == 200
+
+    seen = []
+
+    class Spy(SlowBuyer):
+        async def on_book(self, book):
+            seen.append(book.bids)
+            return await super().on_book(book)
+
+    app = await run_replay(path, Spy())
+    assert len(list(app.ledger.fills())) == 200
+    assert seen[0] == ((0.30, 5.0),)
+
+
+async def test_replay_reports_a_corrupt_recording_instead_of_hanging():
+    import pytest
+
+    path = os.path.join(tempfile.mkdtemp(), "rec.jsonl")
+    with open(path, "w") as f:
+        f.write('{"seq":0,"topic":"book_update","ts":1,"type":"BookUpdate","payload":{"nope":1}}\n')
+    with pytest.raises(TypeError):
+        await asyncio.wait_for(run_replay(path, CheapBuyer()), timeout=5)
+
+
+async def test_reused_ledger_path_holds_only_the_latest_run():
+    path = os.path.join(tempfile.mkdtemp(), "rec.jsonl")
+    await _record(path)
+    ledger_path = os.path.join(tempfile.mkdtemp(), "ledger.jsonl")
+    await run_replay(path, CheapBuyer(), ledger_path=ledger_path)
+    app = await run_replay(path, CheapBuyer(), ledger_path=ledger_path)
+    assert len(list(app.ledger.fills())) == 2

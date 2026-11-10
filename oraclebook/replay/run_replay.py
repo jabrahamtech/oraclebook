@@ -43,6 +43,8 @@ async def run_replay(
 ) -> App:
     """Replay `recording_path` through `strategy` in paper mode; return the finished App."""
     clock = ReplayClock(strict=False)
+    if ledger_path is not None and os.path.exists(ledger_path):
+        open(ledger_path, "w").close()  # the ledger describes this run only
     ledger = Ledger(ledger_path or os.path.join(tempfile.mkdtemp(), "replay_events.jsonl"))
     book = PositionTracker()
     executor: Executor | str
@@ -70,12 +72,10 @@ async def run_replay(
     feed = ReplayFeed(app.bus, clock, recording_path)
     await feed.start()
     await feed.wait_done()
-    # Drain: let the consumers finish processing every queued event before stopping.
-    for _ in range(10_000):
-        await asyncio.sleep(0)
-        if not any(d for depths in app.bus.queue_depths.values() for d in depths):
-            break
-    await asyncio.sleep(0.01)
+    # Drain: let the consumers finish every queued event (and any fills they publish).
+    await asyncio.sleep(0)
+    while not app.idle:
+        await asyncio.sleep(0.001)
     await feed.stop()
     await app.stop()
     ledger.close()

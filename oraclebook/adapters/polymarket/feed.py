@@ -27,6 +27,7 @@ _CHANNEL_INIT = {"assets_ids": [], "type": "market", "level": 2, "initial_dump":
 def _valid(level: dict) -> bool:
     try:
         p = float(level["price"])
+        float(level["size"])
     except (KeyError, TypeError, ValueError):
         return False
     return 0.001 <= p <= 0.999
@@ -35,11 +36,20 @@ def _valid(level: dict) -> bool:
 class PolymarketFeed:
     """Streams Polymarket order books onto the bus. Implements the `Feed` protocol."""
 
-    def __init__(self, bus: Bus, assets: list[str], intervals: list[int], *, ping_interval: float = 10.0) -> None:
+    def __init__(
+        self,
+        bus: Bus,
+        assets: list[str],
+        intervals: list[int],
+        *,
+        ping_interval: float = 10.0,
+        rediscover_interval: float = 30.0,
+    ) -> None:
         self._bus = bus
         self._assets = assets
         self._intervals = intervals
         self._ping_interval = ping_interval
+        self._rediscover_interval = rediscover_interval
         self._token_market: dict[str, str] = {}
         # Local L2 book per token, rebuilt from snapshots + price_change deltas.
         self._levels: dict[str, dict[str, dict[float, float]]] = {}
@@ -47,19 +57,41 @@ class PolymarketFeed:
         self._ws = None
         self._task: asyncio.Task | None = None
         self._ping_task: asyncio.Task | None = None
+        self._discover_task: asyncio.Task | None = None
         self._running = False
 
     async def start(self) -> None:
         self._running = True
-        # Discover markets off the event loop (markets.discover uses blocking urllib).
-        markets = await asyncio.to_thread(discover, self._assets, self._intervals)
-        self._token_market = {t: m.market_id for m in markets for t in m.token_ids}
-        logger.info("polymarket_feed.discovered", markets=len(markets), tokens=len(self._token_market))
+        await self._discover()
         self._task = asyncio.create_task(self._run())
+        self._discover_task = asyncio.create_task(self._rediscover())
+
+    async def _discover(self) -> None:
+        """Find the live up/down markets and subscribe to any tokens not yet subscribed.
+        These markets roll every interval, so this runs on a timer, not just at start."""
+        # Off the event loop: markets.discover uses blocking urllib.
+        markets = await asyncio.to_thread(discover, self._assets, self._intervals)
+        new = {t: m.market_id for m in markets for t in m.token_ids if t not in self._token_market}
+        if not new:
+            return
+        self._token_market.update(new)
+        logger.info("polymarket_feed.discovered", markets=len(markets), new_tokens=len(new))
+        if self._ws is not None and not self._ws.closed:
+            await self._ws.send_json(
+                {"operation": "subscribe", "assets_ids": list(new), "level": 2}
+            )
+
+    async def _rediscover(self) -> None:
+        while self._running:
+            await asyncio.sleep(self._rediscover_interval)
+            try:
+                await self._discover()
+            except Exception as exc:
+                logger.warning("polymarket_feed.discover_failed", error=str(exc))
 
     async def stop(self) -> None:
         self._running = False
-        for t in (self._task, self._ping_task):
+        for t in (self._task, self._ping_task, self._discover_task):
             if t is not None:
                 t.cancel()
         if self._ws is not None and not self._ws.closed:
@@ -71,14 +103,16 @@ class PolymarketFeed:
         import aiohttp  # optional adapter dependency
 
         self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10))
-        tokens = list(self._token_market)
         while self._running:
             try:
                 self._ws = await self._session.ws_connect(WS_URL)
                 await self._ws.send_json(_CHANNEL_INIT)
+                tokens = list(self._token_market)
                 if tokens:
                     await self._ws.send_json({"operation": "subscribe", "assets_ids": tokens, "level": 2})
-                self._ping_task = asyncio.create_task(self._ping())
+                if self._ping_task is not None:
+                    self._ping_task.cancel()  # one pinger per live socket
+                self._ping_task = asyncio.create_task(self._ping(self._ws))
                 async for msg in self._ws:
                     if not self._running:
                         break
@@ -92,10 +126,10 @@ class PolymarketFeed:
                 logger.warning("polymarket_feed.error", error=str(exc))
                 await asyncio.sleep(2.0)
 
-    async def _ping(self) -> None:
-        while self._running and self._ws is not None and not self._ws.closed:
+    async def _ping(self, ws) -> None:
+        while self._running and not ws.closed:
             try:
-                await self._ws.send_str("PING")
+                await ws.send_str("PING")
                 await asyncio.sleep(self._ping_interval)
             except Exception:
                 break
@@ -108,10 +142,14 @@ class PolymarketFeed:
         for item in (data if isinstance(data, list) else [data]):
             if not isinstance(item, dict):
                 continue
-            if "bids" in item or "asks" in item:
-                await self._publish_book(item)
-            elif "price_changes" in item or item.get("event_type") == "price_change":
-                await self._publish_price_changes(item)  # incremental top-of-book updates
+            try:
+                if "bids" in item or "asks" in item:
+                    await self._publish_book(item)
+                elif "price_changes" in item or item.get("event_type") == "price_change":
+                    await self._publish_price_changes(item)
+            except Exception:
+                # One malformed item must not drop the connection.
+                logger.exception("polymarket_feed.bad_message", asset_id=item.get("asset_id"))
 
     @staticmethod
     def _age_ms(d: dict) -> float:

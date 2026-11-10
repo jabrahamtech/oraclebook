@@ -11,9 +11,13 @@ from __future__ import annotations
 import asyncio
 import json
 
+import structlog
+
 from oraclebook.core.bus import Bus
 from oraclebook.core.clock import ReplayClock
 from oraclebook.core.events import BookUpdate, IntervalBoundary, PriceTick
+
+logger = structlog.get_logger()
 
 # Map recorded type names back to event classes.
 _TYPES = {
@@ -41,22 +45,39 @@ class ReplayFeed:
             self._task.cancel()
 
     async def wait_done(self) -> None:
-        """Await until every recorded event has been published."""
+        """Await until every recorded event has been published; re-raise if replay failed."""
         await self._done.wait()
+        if self._task is not None and self._task.done() and not self._task.cancelled():
+            exc = self._task.exception()
+            if exc is not None:
+                raise exc
 
     async def _run(self) -> None:
-        records: list[dict] = []
-        with open(self._path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
+        try:
+            with open(self._path, encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+            records: list[dict] = []
+            for i, line in enumerate(lines):
+                try:
                     records.append(json.loads(line))
-        records.sort(key=lambda r: r["seq"])
-        for rec in records:
-            cls = _TYPES.get(rec["type"])
-            if cls is None:
-                continue
-            self._clock.advance_to(rec["ts"])
-            await self._bus.publish(rec["topic"], cls(**rec["payload"]))
-            await asyncio.sleep(0)  # yield so consumers process before the next tick
-        self._done.set()
+                except json.JSONDecodeError:
+                    if i < len(lines) - 1:
+                        raise
+                    # A recorder killed mid-write leaves a partial last line.
+                    logger.warning("replay_feed.truncated_last_line", path=self._path)
+            # Recorder assigns seq per topic as it consumes, so a burst across topics is
+            # grouped by topic; event ts restores the order they were published in.
+            records.sort(key=lambda r: (r["ts"], r["seq"]))
+            for rec in records:
+                cls = _TYPES.get(rec["type"])
+                if cls is None:
+                    continue
+                payload = dict(rec["payload"])
+                for key in ("bids", "asks"):
+                    if key in payload:
+                        payload[key] = tuple(tuple(level) for level in payload[key])
+                self._clock.advance_to(rec["ts"])
+                await self._bus.publish(rec["topic"], cls(**payload))
+                await asyncio.sleep(0)  # yield so consumers process before the next tick
+        finally:
+            self._done.set()

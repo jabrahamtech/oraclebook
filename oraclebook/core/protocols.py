@@ -23,6 +23,13 @@ from oraclebook.core.models import (
 
 if TYPE_CHECKING:
     from oraclebook.core.bus import Bus
+    from oraclebook.core.events import (
+        BookUpdate,
+        IntervalBoundary,
+        OrderFilled,
+        PositionResolved,
+        PriceTick,
+    )
 
 
 @runtime_checkable
@@ -52,6 +59,11 @@ class Strategy(Protocol):
 
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
+    async def on_book(self, book: BookUpdate) -> list[OrderRequest]: ...
+    async def on_price(self, tick: PriceTick) -> list[OrderRequest]: ...
+    async def on_boundary(self, boundary: IntervalBoundary) -> list[OrderRequest]: ...
+    async def on_fill(self, event: OrderFilled) -> None: ...
+    async def on_resolution(self, event: PositionResolved) -> None: ...
 
 
 @runtime_checkable
