@@ -90,3 +90,26 @@ async def test_reused_ledger_path_holds_only_the_latest_run():
     await run_replay(path, CheapBuyer(), ledger_path=ledger_path)
     app = await run_replay(path, CheapBuyer(), ledger_path=ledger_path)
     assert len(list(app.ledger.fills())) == 2
+
+
+async def test_discovered_markets_round_trip_through_a_recording():
+    from oraclebook.core.events import EVT_MARKETS_DISCOVERED, MarketsDiscovered
+
+    market = ob.Market(venue="v", market_id="m1", condition_id="c", token_ids=("UP", "DN"),
+                       outcomes=("Up", "Down"), start_ts=100.0, end_ts=400.0, meta={"slug": "s"})
+    path = os.path.join(tempfile.mkdtemp(), "rec.jsonl")
+    bus = Bus()
+    rec = Recorder(bus, path)
+    await rec.start()
+    await bus.publish(EVT_MARKETS_DISCOVERED, MarketsDiscovered(markets=(market,)))
+    await rec.stop()
+
+    class Listener(ob.BaseStrategy):
+        seen = ()
+
+        async def on_markets(self, event):
+            self.seen = event.markets
+
+    s = Listener()
+    await run_replay(path, s)
+    assert s.seen == (market,)

@@ -30,7 +30,7 @@ update the `Book` and `Ledger`; and `Replay` re-runs the recorded **feed** for b
 
 | You want to… | Do this |
 |---|---|
-| Add trading logic | Subclass `BaseStrategy` (`oraclebook/strategies/base.py`) in `oraclebook/strategies/`, override the handlers you need (`on_book` / `on_price` / `on_boundary`), return `OrderRequest`s. (`Strategy` in `core/protocols.py` is the structural Protocol those handlers satisfy — depend on it, don't subclass it.) |
+| Add trading logic | Subclass `BaseStrategy` (`oraclebook/strategies/base.py`) in `oraclebook/strategies/`, override the handlers you need (`on_book` / `on_price` / `on_boundary`), return `OrderRequest`s; `on_markets` delivers each `Market`'s outcomes and start/end times. (`Strategy` in `core/protocols.py` is the structural Protocol those handlers satisfy — depend on it, don't subclass it.) |
 | Add a risk check | Implement the `Gate` protocol (`name` + `check(orders, ctx) -> RiskCheck` — no base class to subclass), register it on the `App`. Built-ins live in `oraclebook/risk/gates.py`. |
 | Add a data source | Implement the `Feed` protocol (`start` / `stop`), publish events onto the bus. |
 | Add a whole venue | Implement `Venue` (`feed(bus)`, `executor`, `current_markets`, `fee`) in `oraclebook/adapters/<venue>/`; copy `adapters/polymarket/` as the reference. |
@@ -53,6 +53,6 @@ update the `Book` and `Ledger`; and `Replay` re-runs the recorded **feed** for b
 oraclebook/core/        # Bus, App, models, events, protocols, clock, ledger (venue-agnostic)
 oraclebook/risk/        # Gates + circuit breaker
 oraclebook/replay/      # recorder + replay feed (backtesting on recorded flow)
-oraclebook/strategies/  # Strategy base + examples (CompleteSetMaker)
+oraclebook/strategies/  # Strategy base + examples (CompleteSetMaker, LongshotFader)
 oraclebook/adapters/    # Venue adapters (polymarket = reference)
 ```

@@ -2,7 +2,7 @@
 
 The App dispatches bus events to these handlers. Order-producing handlers (`on_book`,
 `on_price`, `on_boundary`) return a list of `OrderRequest`s; the App runs them through
-the risk Gates and the Executor. Notify handlers (`on_fill`, `on_resolution`) update
+the risk Gates and the Executor. Notify handlers (`on_markets`, `on_fill`, `on_resolution`) update
 your own state and return nothing. A strategy never calls the executor or mutates the
 Book directly — it only emits orders.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 from oraclebook.core.events import (
     BookUpdate,
     IntervalBoundary,
+    MarketsDiscovered,
     OrderFilled,
     PositionResolved,
     PriceTick,
@@ -40,6 +41,9 @@ class BaseStrategy:
         return []
 
     # --- notify handlers (update internal state; return nothing) -------------
+    async def on_markets(self, event: MarketsDiscovered) -> None:
+        ...
+
     async def on_fill(self, event: OrderFilled) -> None:
         ...
 

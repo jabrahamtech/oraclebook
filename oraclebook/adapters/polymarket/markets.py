@@ -119,12 +119,7 @@ def _to_market(m: dict) -> Market | None:
                 "polymarket_markets.fee_schedule_differs", (slug,),
                 slug=slug, schedule=meta["fee_schedule"], simulated_rate=CRYPTO_FEE_RATE,
             )
-    end_ts: float | None = None
-    if m.get("endDate"):
-        try:
-            end_ts = datetime.fromisoformat(m["endDate"].replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            pass
+    start_ts, end_ts = _timestamp(m.get("eventStartTime")), _timestamp(m.get("endDate"))
     return Market(
         venue="polymarket",
         market_id=str(m.get("id") or cond),
@@ -133,11 +128,22 @@ def _to_market(m: dict) -> Market | None:
         outcomes=tuple(outs),
         tick_size=str(m.get("orderPriceMinTickSize", "0.01")),
         min_order_size=float(m.get("orderMinSize") or 0.0),
+        start_ts=start_ts,
         end_ts=end_ts,
         fee_taker_only=taker_only,
         fee_verified=fee_verified,
         meta=meta,
     )
+
+
+def _timestamp(iso: str | None) -> float | None:
+    """Unix seconds for a Gamma ISO-8601 time, or None if absent or malformed."""
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def _json_list(value) -> list:

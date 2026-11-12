@@ -98,3 +98,22 @@ async def test_resolution_is_written_to_the_ledger(tmp_path):
     await asyncio.sleep(0.05)
     await app.stop()
     assert [r["payload"]["pnl"] for r in ledger.resolutions()] == [4.5]
+
+
+async def test_strategy_is_told_about_discovered_markets():
+    from oraclebook.core.events import EVT_MARKETS_DISCOVERED, MarketsDiscovered
+
+    class Listener(ob.BaseStrategy):
+        seen = ()
+
+        async def on_markets(self, event):
+            self.seen = event.markets
+
+    s = Listener()
+    app = ob.App(strategy=s, executor="paper")
+    await app.start()
+    market = ob.Market(venue="v", market_id="m1", condition_id="c", token_ids=("UP", "DN"))
+    await app.bus.publish(EVT_MARKETS_DISCOVERED, MarketsDiscovered(markets=(market,)))
+    await asyncio.sleep(0.05)
+    await app.stop()
+    assert s.seen == (market,)

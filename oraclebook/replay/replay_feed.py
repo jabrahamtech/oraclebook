@@ -15,7 +15,8 @@ import structlog
 
 from oraclebook.core.bus import Bus
 from oraclebook.core.clock import ReplayClock
-from oraclebook.core.events import BookUpdate, IntervalBoundary, PriceTick
+from oraclebook.core.events import BookUpdate, IntervalBoundary, MarketsDiscovered, PriceTick
+from oraclebook.core.models import Market
 
 logger = structlog.get_logger()
 
@@ -24,7 +25,16 @@ _TYPES = {
     "BookUpdate": BookUpdate,
     "PriceTick": PriceTick,
     "IntervalBoundary": IntervalBoundary,
+    "MarketsDiscovered": MarketsDiscovered,
 }
+
+
+def _market(fields: dict) -> Market:
+    return Market(**{
+        **fields,
+        "token_ids": tuple(fields["token_ids"]),
+        "outcomes": tuple(fields.get("outcomes", ())),
+    })
 
 
 class ReplayFeed:
@@ -76,6 +86,8 @@ class ReplayFeed:
                 for key in ("bids", "asks"):
                     if key in payload:
                         payload[key] = tuple(tuple(level) for level in payload[key])
+                if "markets" in payload:
+                    payload["markets"] = tuple(_market(m) for m in payload["markets"])
                 self._clock.advance_to(rec["ts"])
                 await self._bus.publish(rec["topic"], cls(**payload))
                 await asyncio.sleep(0)  # yield so consumers process before the next tick

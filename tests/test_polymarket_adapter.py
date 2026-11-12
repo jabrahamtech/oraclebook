@@ -66,11 +66,12 @@ async def test_feed_survives_a_malformed_level_and_resubscribes_new_markets(monk
 
     from oraclebook.adapters.polymarket import feed as feed_mod
     from oraclebook.core.bus import Bus
-    from oraclebook.core.events import EVT_BOOK_UPDATE
+    from oraclebook.core.events import EVT_BOOK_UPDATE, EVT_MARKETS_DISCOVERED
     from oraclebook.core.models import Market
 
     bus = Bus()
     sub = bus.subscribe_raw(EVT_BOOK_UPDATE)
+    discovered = bus.subscribe(EVT_MARKETS_DISCOVERED)
     f = feed_mod.PolymarketFeed(bus, assets=["btc"], intervals=[5])
     await f._on_message(json.dumps({"asset_id": "T", "bids": [{"price": "0.4", "size": "oops"}],
                                     "asks": [{"price": "0.6", "size": "10"}]}))
@@ -96,6 +97,8 @@ async def test_feed_survives_a_malformed_level_and_resubscribes_new_markets(monk
     f._ws = FakeWS()
     await f._discover()  # markets rolled: only the new tokens get subscribed
     assert sent == [{"operation": "subscribe", "assets_ids": ["b1", "b2"], "level": 2}]
+    announced = [[m.market_id for m in discovered.get_nowait().markets] for _ in range(2)]
+    assert announced == [["m-a1", "m-a2"], ["m-b1", "m-b2"]]  # each market announced once
 
 
 def test_hourly_slug_uses_et_start_hour_across_dst():
@@ -117,6 +120,10 @@ def test_market_parsing_reads_fee_schedule_and_v2_position_ids():
     m = _to_market({**base, "clobTokenIds": '["a","b"]', "feeType": "crypto_fees_v2",
                     "feeSchedule": {"rate": 0.07, "exponent": 1, "takerOnly": True}})
     assert m.token_ids == ("a", "b") and m.fee_verified
+    assert (m.start_ts, m.end_ts) == (None, None)
+    timed = _to_market({**base, "clobTokenIds": '["a","b"]',
+                        "eventStartTime": "2026-11-12T06:05:00Z", "endDate": "2026-11-12T06:10:00Z"})
+    assert (timed.start_ts, timed.end_ts) == (1794463500.0, 1794463800.0)
     assert m.meta["fee_schedule"] == {"rate": 0.07, "exponent": 1.0}
     assert m.meta["version"] == "v1"
 

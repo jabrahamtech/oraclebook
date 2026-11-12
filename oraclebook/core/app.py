@@ -22,6 +22,7 @@ from oraclebook.core.events import (
     EVT_BOOK_UPDATE,
     EVT_FILLS,
     EVT_INTERVAL_BOUNDARY,
+    EVT_MARKETS_DISCOVERED,
     EVT_ORDER_REJECTED,
     EVT_POSITION_RESOLVED,
     EVT_PRICE_TICK,
@@ -60,13 +61,13 @@ class App:
             self.bus = Bus(
                 critical=frozenset(
                     {EVT_BOOK_UPDATE, EVT_PRICE_TICK, EVT_INTERVAL_BOUNDARY,
-                     EVT_FILLS, EVT_ORDER_REJECTED}
+                     EVT_MARKETS_DISCOVERED, EVT_FILLS, EVT_ORDER_REJECTED}
                 )
             )
         else:
             self.bus = Bus(
                 coalescing={EVT_BOOK_UPDATE: "token_id", EVT_PRICE_TICK: "symbol"},
-                critical=frozenset({EVT_FILLS, EVT_ORDER_REJECTED}),
+                critical=frozenset({EVT_MARKETS_DISCOVERED, EVT_FILLS, EVT_ORDER_REJECTED}),
             )
         self.book = book or PositionTracker()
         self.ledger = ledger
@@ -97,6 +98,7 @@ class App:
         self._spawn(EVT_BOOK_UPDATE, self._on_book, produces_orders=True)
         self._spawn(EVT_PRICE_TICK, self.strategy.on_price, produces_orders=True)
         self._spawn(EVT_INTERVAL_BOUNDARY, self.strategy.on_boundary, produces_orders=True)
+        self._spawn(EVT_MARKETS_DISCOVERED, self.strategy.on_markets, produces_orders=False)
         self._spawn(EVT_FILLS, self.strategy.on_fill, produces_orders=False)
         self._spawn(EVT_POSITION_RESOLVED, self._on_resolution, produces_orders=False)
         if self.feed is not None:
