@@ -46,6 +46,7 @@ class Market:
     tick_size: str = "0.01"
     min_order_size: float = 0.0
     end_ts: float | None = None           # settlement time, unix seconds UTC
+    start_ts: float | None = None         # when the outcome window opens (interval markets)
     fee_taker_only: bool = True           # makers exempt (the common venue model)
     fee_verified: bool = False            # True once the venue's fee params were read
     meta: dict[str, Any] = field(default_factory=dict)  # venue-specific extras

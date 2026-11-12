@@ -16,11 +16,14 @@ from oraclebook.core.bus import Bus
 from oraclebook.core.events import (
     EVT_BOOK_UPDATE,
     EVT_INTERVAL_BOUNDARY,
+    EVT_MARKETS_DISCOVERED,
     EVT_PRICE_TICK,
 )
 from oraclebook.core.ledger import _jsonable
 
-DEFAULT_TOPICS = (EVT_BOOK_UPDATE, EVT_PRICE_TICK, EVT_INTERVAL_BOUNDARY)
+DEFAULT_TOPICS = (
+    EVT_BOOK_UPDATE, EVT_PRICE_TICK, EVT_INTERVAL_BOUNDARY, EVT_MARKETS_DISCOVERED
+)
 
 
 class Recorder:

@@ -39,6 +39,7 @@ from oraclebook.core.protocols import (
 )
 from oraclebook.strategies.base import BaseStrategy
 from oraclebook.strategies.complete_set_maker import CompleteSetMaker
+from oraclebook.strategies.longshot_fader import LongshotFader
 from oraclebook.risk.circuit_breaker import CircuitBreaker
 from oraclebook.risk.gates import (
     BalanceGate,
@@ -55,6 +56,7 @@ __all__ = [
     "App",
     "BaseStrategy",
     "CompleteSetMaker",
+    "LongshotFader",
     "PaperExecutor",
     "DepthPaperExecutor",
     "Bus",

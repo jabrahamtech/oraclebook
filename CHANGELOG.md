@@ -45,3 +45,11 @@ Initial public release.
   snapshots.
 - `CompleteSetMaker` reference strategy, shipped candidly as a worked example of a strategy
   that doesn't survive real fill dynamics.
+- Market metadata reaches strategies: the Polymarket feed publishes `MarketsDiscovered` for each
+  newly found market, the App delivers it to `Strategy.on_markets`, and the Recorder and Replay
+  carry it, so a recording is self-describing. `Market.start_ts` is the time the outcome window
+  opens (Gamma `eventStartTime`).
+- `LongshotFader` research strategy: one short-lived GTD bid on the favourite of an interval
+  market, early in the interval, held to settlement. Fitted on a week of settled BTC up/down
+  markets (+2.1c/share) it was flat on the held-out week (+0.0c) and lost on ETH/SOL/XRP; the
+  docstring carries the numbers. A candidate to paper-trade, not a profitable strategy.

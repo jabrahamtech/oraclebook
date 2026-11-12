@@ -1,7 +1,8 @@
 """PolymarketFeed — the Polymarket CLOB market WebSocket book feed.
 
 Discovers the active up/down markets (Gamma), subscribes to their outcome tokens on the
-CLOB market socket, parses L2 book snapshots, and publishes `BookUpdate` events. Read-only
+CLOB market socket, parses L2 book snapshots, and publishes `BookUpdate` events (plus a
+`MarketsDiscovered` event for each batch of newly found markets). Read-only
 — no credentials required, so it powers paper trading, recording, and Replay against real
 Polymarket data. (The production bot runs redundant connections with freeze detection; this
 reference uses a single auto-reconnecting connection — adequate for most use, extensible.)
@@ -16,7 +17,12 @@ import structlog
 
 from oraclebook.adapters.polymarket.markets import discover
 from oraclebook.core.bus import Bus
-from oraclebook.core.events import EVT_BOOK_UPDATE, BookUpdate
+from oraclebook.core.events import (
+    EVT_BOOK_UPDATE,
+    EVT_MARKETS_DISCOVERED,
+    BookUpdate,
+    MarketsDiscovered,
+)
 
 logger = structlog.get_logger()
 
@@ -71,11 +77,13 @@ class PolymarketFeed:
         These markets roll every interval, so this runs on a timer, not just at start."""
         # Off the event loop: markets.discover uses blocking urllib.
         markets = await asyncio.to_thread(discover, self._assets, self._intervals)
-        new = {t: m.market_id for m in markets for t in m.token_ids if t not in self._token_market}
+        fresh = [m for m in markets if any(t not in self._token_market for t in m.token_ids)]
+        new = {t: m.market_id for m in fresh for t in m.token_ids if t not in self._token_market}
         if not new:
             return
         self._token_market.update(new)
         logger.info("polymarket_feed.discovered", markets=len(markets), new_tokens=len(new))
+        await self._bus.publish(EVT_MARKETS_DISCOVERED, MarketsDiscovered(markets=tuple(fresh)))
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json(
                 {"operation": "subscribe", "assets_ids": list(new), "level": 2}

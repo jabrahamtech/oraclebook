@@ -140,8 +140,11 @@ Live in `oraclebook/adapters/kalshi/`. See `adapters/polymarket/` as the worked 
 
 The repo ships **`CompleteSetMaker`** — the real Polymarket complete-set market-maker this
 framework grew out of — and its docstring is candid that **naive complete-set MM loses to
-one-leg adverse selection**. The point of oraclebook isn't to hand you an edge; it's to let
-you *find out cheaply* whether you have one — in paper and Replay — before you fund it.
+one-leg adverse selection**. **`LongshotFader`** is the second example: it uses market timing
+(`on_markets`) and short-lived GTD quotes to bid the favourite early in an interval, and its
+docstring reports the fitted edge next to the held-out week where it disappeared. The point of
+oraclebook isn't to hand you an edge; it's to let you *find out cheaply* whether you have one —
+in paper and Replay — before you fund it.
 
 ## Next
 
